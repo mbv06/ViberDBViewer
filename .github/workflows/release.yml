@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    name: Build signed release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Prepare release metadata
+        shell: bash
+        run: |
+          version_name="${GITHUB_REF_NAME#v}"
+          if [[ -z "$version_name" ]]; then
+            echo "::error::The release tag must contain a version after the v prefix."
+            exit 1
+          fi
+
+          echo "VERSION_NAME=$version_name" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "RELEASE_BASENAME=ViberDBViewer-$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+
+      - name: Restore release keystore
+        shell: bash
+        run: |
+          missing=0
+          for variable in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEYSTORE_PASSWORD \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD
+          do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::GitHub Secret $variable is not configured."
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
+          keystore_path="$RUNNER_TEMP/viber-db-viewer-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          chmod 600 "$keystore_path"
+          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Test and build signed APK
+        run: ./gradlew testDebugUnitTest assembleRelease --stacktrace
+
+      - name: Verify signatures and collect artifacts
+        shell: bash
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release.apk \
+            "release/$RELEASE_BASENAME.apk"
+
+          apksigner_path="$({ find "$ANDROID_SDK_ROOT/build-tools" -type f -name apksigner -print0 \
+            | xargs -0 ls -1v; } | tail -n 1)"
+          if [[ -z "$apksigner_path" ]]; then
+            echo "::error::Android apksigner was not found."
+            exit 1
+          fi
+
+          "$apksigner_path" verify --verbose --print-certs \
+            "release/$RELEASE_BASENAME.apk"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: ViberDBViewer-${{ github.ref_name }}
+          path: release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/*.apk --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release/*.apk \
+              --verify-tag \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME"
+          fi
