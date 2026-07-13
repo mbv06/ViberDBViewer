@@ -8,9 +8,12 @@ import androidx.lifecycle.viewModelScope
 import com.mbv.viberdbviewer.data.ViberDatabaseRepository
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
+import com.mbv.viberdbviewer.model.GlobalSearchResult
 import com.mbv.viberdbviewer.model.filterChats
 import com.mbv.viberdbviewer.model.findMessageMatches
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +26,10 @@ data class ViewerUiState(
     val databaseReady: Boolean = false,
     val chats: List<ChatSummary> = emptyList(),
     val chatQuery: String = "",
+    val isGlobalSearchVisible: Boolean = false,
+    val globalSearchQuery: String = "",
+    val globalSearchResults: List<GlobalSearchResult> = emptyList(),
+    val isGlobalSearchLoading: Boolean = false,
     val selectedChat: ChatSummary? = null,
     val messages: List<ChatMessage> = emptyList(),
     val isLoadingMessages: Boolean = false,
@@ -45,6 +52,7 @@ class MainViewModel(
     val state: StateFlow<ViewerUiState> = _state.asStateFlow()
 
     private var messageLoadJob: Job? = null
+    private var globalSearchJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -65,6 +73,7 @@ class MainViewModel(
 
     fun importDatabase(uri: Uri) {
         if (_state.value.isImporting) return
+        globalSearchJob?.cancel()
         viewModelScope.launch {
             _state.update { it.copy(isImporting = true, error = null) }
             try {
@@ -80,15 +89,72 @@ class MainViewModel(
         _state.update { it.copy(chatQuery = query) }
     }
 
+    fun setGlobalSearchVisible(visible: Boolean) {
+        globalSearchJob?.cancel()
+        _state.update {
+            if (visible) {
+                it.copy(isGlobalSearchVisible = true, chatQuery = "")
+            } else {
+                it.copy(
+                    isGlobalSearchVisible = false,
+                    globalSearchQuery = "",
+                    globalSearchResults = emptyList(),
+                    isGlobalSearchLoading = false,
+                )
+            }
+        }
+    }
+
+    fun updateGlobalSearchQuery(query: String) {
+        globalSearchJob?.cancel()
+        val needle = query.trim()
+        _state.update {
+            it.copy(
+                globalSearchQuery = query,
+                globalSearchResults = emptyList(),
+                isGlobalSearchLoading = needle.isNotEmpty(),
+            )
+        }
+        if (needle.isEmpty()) return
+
+        globalSearchJob = viewModelScope.launch {
+            try {
+                delay(250)
+                val results = repository.searchMessages(needle)
+                if (_state.value.globalSearchQuery == query) {
+                    _state.update {
+                        it.copy(globalSearchResults = results, isGlobalSearchLoading = false)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _state.update {
+                    it.copy(isGlobalSearchLoading = false, error = repository.userMessage(error))
+                }
+            }
+        }
+    }
+
     fun selectChat(chat: ChatSummary) {
+        openChat(chat)
+    }
+
+    fun selectGlobalSearchResult(result: GlobalSearchResult) {
+        val current = _state.value
+        val chat = current.chats.firstOrNull { it.chatId == result.chatId } ?: return
+        openChat(chat, current.globalSearchQuery.trim(), result.eventId)
+    }
+
+    private fun openChat(chat: ChatSummary, initialQuery: String = "", targetEventId: Long? = null) {
         messageLoadJob?.cancel()
         _state.update {
             it.copy(
                 selectedChat = chat,
                 messages = emptyList(),
                 isLoadingMessages = true,
-                isMessageSearchVisible = false,
-                messageQuery = "",
+                isMessageSearchVisible = initialQuery.isNotEmpty(),
+                messageQuery = initialQuery,
                 matchIndices = emptyList(),
                 activeMatchPosition = -1,
                 error = null,
@@ -98,10 +164,18 @@ class MainViewModel(
             try {
                 val messages = repository.loadMessages(chat.chatId)
                 if (_state.value.selectedChat?.chatId == chat.chatId) {
+                    val matches = findMessageMatches(messages, initialQuery)
+                    val targetIndex = targetEventId?.let { id ->
+                        messages.indexOfFirst { it.eventId == id }.takeIf { it >= 0 }
+                    }
+                    val targetMatchPosition = targetIndex?.let(matches::indexOf)?.takeIf { it >= 0 }
+                        ?: matches.lastIndex
                     _state.update {
                         it.copy(
                             messages = messages,
                             isLoadingMessages = false,
+                            matchIndices = matches,
+                            activeMatchPosition = targetMatchPosition,
                             scrollRequest = it.scrollRequest + 1,
                         )
                     }

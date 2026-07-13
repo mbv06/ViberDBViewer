@@ -4,6 +4,7 @@
     <string name="action_change_database">Сменить базу</string>
     <string name="action_close">Закрыть</string>
     <string name="action_search">Поиск</string>
+    <string name="action_global_search">Поиск везде</string>
 
     <string name="database_error_title">Ошибка базы данных</string>
     <string name="loading_saved_database">Проверяем сохранённую базу…</string>
@@ -14,6 +15,10 @@
     <string name="no_chats">В базе нет чатов с сообщениями</string>
     <string name="no_search_results">Ничего не найдено</string>
     <string name="message_search_hint">Текст сообщения</string>
+    <string name="global_search_title">Глобальный поиск</string>
+    <string name="global_search_label">Текст во всех чатах</string>
+    <string name="global_search_start">Введите текст для поиска по всем чатам</string>
+    <string name="global_search_limit">Показаны 200 самых новых совпадений</string>
     <string name="no_messages">В чате нет сообщений</string>
 
     <plurals name="participant_count">

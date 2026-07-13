@@ -58,6 +58,19 @@ class ViberDatabaseRepositoryTest {
     }
 
     @Test
+    fun globalSearchFindsBusinessAndDeletedMessagesCaseInsensitively() = runBlocking {
+        repository.importDatabase(Uri.fromFile(source))
+
+        val business = repository.searchMessages("BUSINESS")
+        assertEquals(listOf(103L), business.map { it.eventId })
+        assertEquals("Business notice", business.single().displayText)
+
+        val deleted = repository.searchMessages(context.getString(R.string.message_deleted).uppercase())
+        assertEquals(listOf(104L), deleted.map { it.eventId })
+        assertEquals(MessageKind.DELETED, deleted.single().kind)
+    }
+
+    @Test
     fun failedReplacementKeepsPreviouslyImportedDatabase() = runBlocking {
         repository.importDatabase(Uri.fromFile(source))
         val invalid = File(context.cacheDir, "invalid-${System.nanoTime()}.db").apply { writeText("not sqlite") }

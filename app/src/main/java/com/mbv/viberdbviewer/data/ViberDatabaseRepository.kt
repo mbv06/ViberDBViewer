@@ -8,10 +8,12 @@ import com.mbv.viberdbviewer.R
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
 import com.mbv.viberdbviewer.model.ContactRecord
+import com.mbv.viberdbviewer.model.GlobalSearchResult
 import com.mbv.viberdbviewer.model.MessageLabels
 import com.mbv.viberdbviewer.model.clean
 import com.mbv.viberdbviewer.model.formatMessage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.File
@@ -183,6 +185,57 @@ class ViberDatabaseRepository(context: Context) : Closeable {
         }
         messages
     }
+
+    suspend fun searchMessages(query: String, limit: Int = 200): List<GlobalSearchResult> =
+        withContext(Dispatchers.IO) {
+            val needle = query.trim()
+            if (needle.isEmpty()) return@withContext emptyList()
+
+            val db = requireDatabase()
+            val resultLimit = limit.coerceIn(1, 1000)
+            val results = ArrayList<GlobalSearchResult>(minOf(resultLimit, 200))
+            db.rawQuery(
+                """
+                SELECT e.EventID, e.ChatID, e.TimeStamp, e.ContactID, m.Type, m.Body,
+                       CASE WHEN m.Type IN (9, 15) THEN m.Info ELSE NULL END,
+                       c.Name, c.ClientName, c.Number
+                FROM Events e
+                INNER JOIN Messages m ON m.EventID = e.EventID
+                LEFT JOIN Contact c ON c.ContactID = e.ContactID
+                WHERE m.Type <> 0
+                  AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (9, 15, 72))
+                ORDER BY e.TimeStamp DESC, e.SortOrder DESC, e.EventID DESC
+                """.trimIndent(),
+                null,
+            ).use { cursor ->
+                while (cursor.moveToNext() && results.size < resultLimit) {
+                    coroutineContext.ensureActive()
+                    val formatted = formatMessage(
+                        cursor.getInt(4),
+                        cursor.stringOrNull(5),
+                        cursor.stringOrNull(6),
+                        messageLabels,
+                    )
+                    if (!formatted.searchableText.contains(needle, ignoreCase = true)) continue
+
+                    val sender = ContactRecord(
+                        contactId = cursor.longOrNull(3) ?: -1,
+                        name = cursor.stringOrNull(7),
+                        clientName = cursor.stringOrNull(8),
+                        number = cursor.stringOrNull(9),
+                    ).displayName(text(R.string.unknown_sender))
+                    results += GlobalSearchResult(
+                        chatId = cursor.getLong(1),
+                        eventId = cursor.getLong(0),
+                        timestamp = cursor.getLong(2),
+                        senderName = sender,
+                        kind = formatted.kind,
+                        displayText = formatted.displayText,
+                    )
+                }
+            }
+            results
+        }
 
     private fun installCandidate() {
         closeDatabase()

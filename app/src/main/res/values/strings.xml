@@ -6,6 +6,7 @@
     <string name="action_change_database">Change database</string>
     <string name="action_close">Close</string>
     <string name="action_search">Search</string>
+    <string name="action_global_search">Search messages</string>
 
     <string name="database_error_title">Database error</string>
     <string name="loading_saved_database">Checking the saved database…</string>
@@ -16,6 +17,10 @@
     <string name="no_chats">This database has no chats with messages</string>
     <string name="no_search_results">No results</string>
     <string name="message_search_hint">Message text</string>
+    <string name="global_search_title">Global search</string>
+    <string name="global_search_label">Message text in all chats</string>
+    <string name="global_search_start">Enter text to search all chats</string>
+    <string name="global_search_limit">Showing the 200 newest matches</string>
     <string name="no_messages">This chat has no messages</string>
 
     <plurals name="participant_count">

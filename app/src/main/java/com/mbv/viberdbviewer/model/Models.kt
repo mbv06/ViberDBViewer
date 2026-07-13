@@ -22,6 +22,15 @@ data class ChatMessage(
     val isOutgoing: Boolean get() = direction == 1
 }
 
+data class GlobalSearchResult(
+    val chatId: Long,
+    val eventId: Long,
+    val timestamp: Long,
+    val senderName: String,
+    val kind: MessageKind,
+    val displayText: String,
+)
+
 enum class MessageKind {
     TEXT,
     LINK,

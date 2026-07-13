@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
+import com.mbv.viberdbviewer.model.GlobalSearchResult
 import com.mbv.viberdbviewer.model.MessageKind
 import com.mbv.viberdbviewer.ui.theme.ViberDBViewerTheme
 import java.time.Instant
@@ -95,6 +96,9 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onPickDatabase = pickDatabase,
                         onChatQueryChange = viewerViewModel::updateChatQuery,
+                        onGlobalSearchVisibilityChange = viewerViewModel::setGlobalSearchVisible,
+                        onGlobalSearchQueryChange = viewerViewModel::updateGlobalSearchQuery,
+                        onGlobalSearchResultSelected = viewerViewModel::selectGlobalSearchResult,
                         onChatSelected = viewerViewModel::selectChat,
                         onBack = viewerViewModel::closeChat,
                         onSearchVisibilityChange = viewerViewModel::setMessageSearchVisible,
@@ -124,6 +128,9 @@ fun ViewerApp(
     state: ViewerUiState,
     onPickDatabase: () -> Unit,
     onChatQueryChange: (String) -> Unit,
+    onGlobalSearchVisibilityChange: (Boolean) -> Unit,
+    onGlobalSearchQueryChange: (String) -> Unit,
+    onGlobalSearchResultSelected: (GlobalSearchResult) -> Unit,
     onChatSelected: (ChatSummary) -> Unit,
     onBack: () -> Unit,
     onSearchVisibilityChange: (Boolean) -> Unit,
@@ -136,11 +143,18 @@ fun ViewerApp(
             state.isStarting -> LoadingScreen(stringResource(R.string.loading_saved_database))
             !state.databaseReady -> DatabasePickerScreen(onPickDatabase)
             state.selectedChat == null -> ChatListScreen(
-                chats = state.filteredChats,
+                chats = if (state.isGlobalSearchVisible) state.chats else state.filteredChats,
                 query = state.chatQuery,
                 onQueryChange = onChatQueryChange,
                 onChatSelected = onChatSelected,
                 onReplaceDatabase = onPickDatabase,
+                isGlobalSearchVisible = state.isGlobalSearchVisible,
+                globalSearchQuery = state.globalSearchQuery,
+                globalSearchResults = state.globalSearchResults,
+                isGlobalSearchLoading = state.isGlobalSearchLoading,
+                onGlobalSearchVisibilityChange = onGlobalSearchVisibilityChange,
+                onGlobalSearchQueryChange = onGlobalSearchQueryChange,
+                onGlobalSearchResultSelected = onGlobalSearchResultSelected,
             )
             else -> ConversationScreen(
                 chat = state.selectedChat,
@@ -214,39 +228,167 @@ fun ChatListScreen(
     onQueryChange: (String) -> Unit,
     onChatSelected: (ChatSummary) -> Unit,
     onReplaceDatabase: () -> Unit,
+    isGlobalSearchVisible: Boolean = false,
+    globalSearchQuery: String = "",
+    globalSearchResults: List<GlobalSearchResult> = emptyList(),
+    isGlobalSearchLoading: Boolean = false,
+    onGlobalSearchVisibilityChange: (Boolean) -> Unit = {},
+    onGlobalSearchQueryChange: (String) -> Unit = {},
+    onGlobalSearchResultSelected: (GlobalSearchResult) -> Unit = {},
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.chats_title)) },
-                actions = { TextButton(onClick = onReplaceDatabase) { Text(stringResource(R.string.action_change_database)) } },
+                title = {
+                    Text(
+                        stringResource(
+                            if (isGlobalSearchVisible) R.string.global_search_title else R.string.chats_title,
+                        ),
+                    )
+                },
+                actions = {
+                    TextButton(onClick = { onGlobalSearchVisibilityChange(!isGlobalSearchVisible) }) {
+                        Text(
+                            stringResource(
+                                if (isGlobalSearchVisible) R.string.action_close else R.string.action_global_search,
+                            ),
+                        )
+                    }
+                    TextButton(onClick = onReplaceDatabase) {
+                        Text(stringResource(R.string.action_change_database))
+                    }
+                },
             )
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                singleLine = true,
-                label = { Text(stringResource(R.string.chat_search_label)) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) TextButton(onClick = { onQueryChange("") }) { Text("✕") }
-                },
-            )
-            if (chats.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(if (query.isBlank()) R.string.no_chats else R.string.no_search_results))
+            if (isGlobalSearchVisible) {
+                OutlinedTextField(
+                    value = globalSearchQuery,
+                    onValueChange = onGlobalSearchQueryChange,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.global_search_label)) },
+                    trailingIcon = {
+                        if (globalSearchQuery.isNotEmpty()) {
+                            TextButton(onClick = { onGlobalSearchQueryChange("") }) { Text("✕") }
+                        }
+                    },
+                )
+                when {
+                    isGlobalSearchLoading -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                    globalSearchQuery.isBlank() -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.global_search_start))
+                        }
+                    }
+                    globalSearchResults.isEmpty() -> {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.no_search_results))
+                        }
+                    }
+                    else -> {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            items(globalSearchResults, key = { it.eventId }) { result ->
+                                val chatTitle = chats.firstOrNull { it.chatId == result.chatId }?.title
+                                    ?: stringResource(R.string.fallback_chat, result.chatId)
+                                GlobalSearchRow(
+                                    result = result,
+                                    chatTitle = chatTitle,
+                                    onClick = { onGlobalSearchResultSelected(result) },
+                                )
+                                HorizontalDivider()
+                            }
+                            if (globalSearchResults.size >= 200) {
+                                item {
+                                    Text(
+                                        stringResource(R.string.global_search_limit),
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(chats, key = { it.chatId }) { chat ->
-                        ChatRow(chat, onClick = { onChatSelected(chat) })
-                        HorizontalDivider()
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.chat_search_label)) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) TextButton(onClick = { onQueryChange("") }) { Text("✕") }
+                    },
+                )
+                if (chats.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(stringResource(if (query.isBlank()) R.string.no_chats else R.string.no_search_results))
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        items(chats, key = { it.chatId }) { chat ->
+                            ChatRow(chat, onClick = { onChatSelected(chat) })
+                            HorizontalDivider()
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GlobalSearchRow(
+    result: GlobalSearchResult,
+    chatTitle: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                chatTitle,
+                modifier = Modifier.weight(1f),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(formatChatTime(result.timestamp), style = MaterialTheme.typography.labelMedium)
+        }
+        if (result.senderName.isNotBlank()) {
+            Text(
+                result.senderName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            result.displayText,
+            style = if (result.kind == MessageKind.DELETED) {
+                MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
+            } else {
+                MaterialTheme.typography.bodyMedium
+            },
+            color = if (result.kind == MessageKind.DELETED) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                Color.Unspecified
+            },
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
