@@ -1,0 +1,58 @@
+<resources>
+    <string name="action_ok">Зрозуміло</string>
+    <string name="action_select_database">Вибрати базу</string>
+    <string name="action_change_database">Змінити базу</string>
+    <string name="action_close">Закрити</string>
+    <string name="action_search">Пошук</string>
+
+    <string name="database_error_title">Помилка бази даних</string>
+    <string name="loading_saved_database">Перевіряємо збережену базу…</string>
+    <string name="importing_database">Копіюємо та перевіряємо базу…</string>
+    <string name="database_picker_description">Виберіть файл viber.db. Застосунок збереже приватну копію та не змінюватиме оригінал.</string>
+    <string name="chats_title">Чати</string>
+    <string name="chat_search_label">Ім’я або номер</string>
+    <string name="no_chats">У базі немає чатів із повідомленнями</string>
+    <string name="no_search_results">Нічого не знайдено</string>
+    <string name="message_search_hint">Текст повідомлення</string>
+    <string name="no_messages">У чаті немає повідомлень</string>
+
+    <plurals name="participant_count">
+        <item quantity="one">%1$d учасник</item>
+        <item quantity="few">%1$d учасники</item>
+        <item quantity="many">%1$d учасників</item>
+        <item quantity="other">%1$d учасника</item>
+    </plurals>
+
+    <string name="fallback_group_chat">Груповий чат №%1$d</string>
+    <string name="fallback_chat">Чат №%1$d</string>
+    <string name="unknown_sender">Невідомий відправник</string>
+
+    <string name="message_empty">&lt;порожнє повідомлення&gt;</string>
+    <string name="message_image">&lt;зображення&gt;</string>
+    <string name="message_video">&lt;відео&gt;</string>
+    <string name="message_sticker">&lt;стікер&gt;</string>
+    <string name="message_location">&lt;геолокація&gt;</string>
+    <string name="message_contact">&lt;контакт&gt;</string>
+    <string name="message_pinned">Закріплено: %1$s</string>
+    <string name="message_pinned_empty">&lt;закріплене повідомлення&gt;</string>
+    <string name="message_unknown_type">&lt;повідомлення типу %1$d&gt;</string>
+    <string name="message_link">&lt;посилання&gt;</string>
+    <string name="message_audio">&lt;аудіо&gt;</string>
+    <string name="message_gif">&lt;GIF&gt;</string>
+    <string name="message_file">&lt;файл&gt;</string>
+
+    <string name="error_open_selected_file">Не вдалося відкрити вибраний файл</string>
+    <string name="error_import_database">Не вдалося імпортувати базу: %1$s</string>
+    <string name="error_unknown">невідома помилка</string>
+    <string name="error_unexpected">Неочікувана помилка: %1$s</string>
+    <string name="error_unknown_reason">невідома причина</string>
+    <string name="error_prepare_replacement">Не вдалося підготувати заміну попередньої бази</string>
+    <string name="error_save_database">Не вдалося зберегти вибрану базу</string>
+    <string name="error_open_imported_database">Не вдалося відкрити імпортовану базу</string>
+    <string name="error_not_sqlite">Вибраний файл не є базою SQLite</string>
+    <string name="error_corrupt_or_encrypted">База пошкоджена або зашифрована</string>
+    <string name="error_integrity_check">Перевірка цілісності бази завершилася помилкою</string>
+    <string name="error_unsupported_schema">Непідтримувана схема бази Viber: %1$s%2$s</string>
+    <string name="error_check_schema">Не вдалося перевірити структуру бази</string>
+    <string name="error_database_not_open">Базу даних не відкрито</string>
+</resources>

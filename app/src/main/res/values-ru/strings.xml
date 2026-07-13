@@ -1,0 +1,58 @@
+<resources>
+    <string name="action_ok">Понятно</string>
+    <string name="action_select_database">Выбрать базу</string>
+    <string name="action_change_database">Сменить базу</string>
+    <string name="action_close">Закрыть</string>
+    <string name="action_search">Поиск</string>
+
+    <string name="database_error_title">Ошибка базы данных</string>
+    <string name="loading_saved_database">Проверяем сохранённую базу…</string>
+    <string name="importing_database">Копируем и проверяем базу…</string>
+    <string name="database_picker_description">Выберите файл viber.db. Приложение сохранит приватную копию и не изменит оригинал.</string>
+    <string name="chats_title">Чаты</string>
+    <string name="chat_search_label">Имя или номер</string>
+    <string name="no_chats">В базе нет чатов с сообщениями</string>
+    <string name="no_search_results">Ничего не найдено</string>
+    <string name="message_search_hint">Текст сообщения</string>
+    <string name="no_messages">В чате нет сообщений</string>
+
+    <plurals name="participant_count">
+        <item quantity="one">%1$d участник</item>
+        <item quantity="few">%1$d участника</item>
+        <item quantity="many">%1$d участников</item>
+        <item quantity="other">%1$d участника</item>
+    </plurals>
+
+    <string name="fallback_group_chat">Групповой чат #%1$d</string>
+    <string name="fallback_chat">Чат #%1$d</string>
+    <string name="unknown_sender">Неизвестный отправитель</string>
+
+    <string name="message_empty">&lt;пустое сообщение&gt;</string>
+    <string name="message_image">&lt;изображение&gt;</string>
+    <string name="message_video">&lt;видео&gt;</string>
+    <string name="message_sticker">&lt;стикер&gt;</string>
+    <string name="message_location">&lt;геолокация&gt;</string>
+    <string name="message_contact">&lt;контакт&gt;</string>
+    <string name="message_pinned">Закреплено: %1$s</string>
+    <string name="message_pinned_empty">&lt;закреплённое сообщение&gt;</string>
+    <string name="message_unknown_type">&lt;сообщение типа %1$d&gt;</string>
+    <string name="message_link">&lt;ссылка&gt;</string>
+    <string name="message_audio">&lt;аудио&gt;</string>
+    <string name="message_gif">&lt;GIF&gt;</string>
+    <string name="message_file">&lt;файл&gt;</string>
+
+    <string name="error_open_selected_file">Не удалось открыть выбранный файл</string>
+    <string name="error_import_database">Не удалось импортировать базу: %1$s</string>
+    <string name="error_unknown">неизвестная ошибка</string>
+    <string name="error_unexpected">Неожиданная ошибка: %1$s</string>
+    <string name="error_unknown_reason">неизвестная причина</string>
+    <string name="error_prepare_replacement">Не удалось подготовить замену предыдущей базы</string>
+    <string name="error_save_database">Не удалось сохранить выбранную базу</string>
+    <string name="error_open_imported_database">Не удалось открыть импортированную базу</string>
+    <string name="error_not_sqlite">Выбранный файл не является базой SQLite</string>
+    <string name="error_corrupt_or_encrypted">База повреждена или зашифрована</string>
+    <string name="error_integrity_check">Проверка целостности базы завершилась ошибкой</string>
+    <string name="error_unsupported_schema">Неподдерживаемая схема Viber: %1$s%2$s</string>
+    <string name="error_check_schema">Не удалось проверить структуру базы</string>
+    <string name="error_database_not_open">База данных не открыта</string>
+</resources>

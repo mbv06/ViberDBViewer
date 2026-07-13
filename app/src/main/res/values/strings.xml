@@ -1,0 +1,58 @@
+<resources>
+    <string name="app_name" translatable="false">Viber DB Viewer</string>
+
+    <string name="action_ok">OK</string>
+    <string name="action_select_database">Select database</string>
+    <string name="action_change_database">Change database</string>
+    <string name="action_close">Close</string>
+    <string name="action_search">Search</string>
+
+    <string name="database_error_title">Database error</string>
+    <string name="loading_saved_database">Checking the saved database…</string>
+    <string name="importing_database">Copying and checking the database…</string>
+    <string name="database_picker_description">Select a viber.db file. The app will save a private copy and will not modify the original.</string>
+    <string name="chats_title">Chats</string>
+    <string name="chat_search_label">Name or phone number</string>
+    <string name="no_chats">This database has no chats with messages</string>
+    <string name="no_search_results">No results</string>
+    <string name="message_search_hint">Message text</string>
+    <string name="no_messages">This chat has no messages</string>
+
+    <plurals name="participant_count">
+        <item quantity="one">%1$d participant</item>
+        <item quantity="other">%1$d participants</item>
+    </plurals>
+
+    <string name="fallback_group_chat">Group chat #%1$d</string>
+    <string name="fallback_chat">Chat #%1$d</string>
+    <string name="unknown_sender">Unknown sender</string>
+
+    <string name="message_empty">&lt;empty message&gt;</string>
+    <string name="message_image">&lt;image&gt;</string>
+    <string name="message_video">&lt;video&gt;</string>
+    <string name="message_sticker">&lt;sticker&gt;</string>
+    <string name="message_location">&lt;location&gt;</string>
+    <string name="message_contact">&lt;contact&gt;</string>
+    <string name="message_pinned">Pinned: %1$s</string>
+    <string name="message_pinned_empty">&lt;pinned message&gt;</string>
+    <string name="message_unknown_type">&lt;message type %1$d&gt;</string>
+    <string name="message_link">&lt;link&gt;</string>
+    <string name="message_audio">&lt;audio&gt;</string>
+    <string name="message_gif">&lt;GIF&gt;</string>
+    <string name="message_file">&lt;file&gt;</string>
+
+    <string name="error_open_selected_file">Could not open the selected file</string>
+    <string name="error_import_database">Could not import the database: %1$s</string>
+    <string name="error_unknown">unknown error</string>
+    <string name="error_unexpected">Unexpected error: %1$s</string>
+    <string name="error_unknown_reason">unknown reason</string>
+    <string name="error_prepare_replacement">Could not prepare the previous database for replacement</string>
+    <string name="error_save_database">Could not save the selected database</string>
+    <string name="error_open_imported_database">Could not open the imported database</string>
+    <string name="error_not_sqlite">The selected file is not an SQLite database</string>
+    <string name="error_corrupt_or_encrypted">The database is corrupted or encrypted</string>
+    <string name="error_integrity_check">The database integrity check failed</string>
+    <string name="error_unsupported_schema">Unsupported Viber database schema: %1$s%2$s</string>
+    <string name="error_check_schema">Could not verify the database structure</string>
+    <string name="error_database_not_open">The database is not open</string>
+</resources>
