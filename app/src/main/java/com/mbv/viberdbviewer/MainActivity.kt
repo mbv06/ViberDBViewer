@@ -82,17 +82,22 @@ class MainActivity : ComponentActivity() {
                     viewerViewModel.closeChat()
                 }
 
-                ViewerApp(
-                    state = state,
-                    onPickDatabase = pickDatabase,
-                    onChatQueryChange = viewerViewModel::updateChatQuery,
-                    onChatSelected = viewerViewModel::selectChat,
-                    onBack = viewerViewModel::closeChat,
-                    onSearchVisibilityChange = viewerViewModel::setMessageSearchVisible,
-                    onMessageQueryChange = viewerViewModel::updateMessageQuery,
-                    onPreviousMatch = viewerViewModel::previousMatch,
-                    onNextMatch = viewerViewModel::nextMatch,
-                )
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    ViewerApp(
+                        state = state,
+                        onPickDatabase = pickDatabase,
+                        onChatQueryChange = viewerViewModel::updateChatQuery,
+                        onChatSelected = viewerViewModel::selectChat,
+                        onBack = viewerViewModel::closeChat,
+                        onSearchVisibilityChange = viewerViewModel::setMessageSearchVisible,
+                        onMessageQueryChange = viewerViewModel::updateMessageQuery,
+                        onPreviousMatch = viewerViewModel::previousMatch,
+                        onNextMatch = viewerViewModel::nextMatch,
+                    )
+                }
 
                 state.error?.let { message ->
                     AlertDialog(
