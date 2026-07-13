@@ -6,12 +6,15 @@ import com.mbv.viberdbviewer.model.ContactRecord
 import com.mbv.viberdbviewer.model.MessageKind
 import com.mbv.viberdbviewer.model.MessageLabels
 import com.mbv.viberdbviewer.model.filterChats
+import com.mbv.viberdbviewer.model.findDaySeparatorIndices
 import com.mbv.viberdbviewer.model.findMessageMatches
 import com.mbv.viberdbviewer.model.formatAndroidMessage
 import com.mbv.viberdbviewer.model.formatMessage
 import com.mbv.viberdbviewer.model.normalizePhone
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 class ModelLogicTest {
     @Test
@@ -26,13 +29,13 @@ class ModelLogicTest {
         assertEquals("fallback", ContactRecord(1, null, null, null).displayName("fallback"))
     }
 
-
     @Test
     fun chatSearchMatchesNameAndNormalizedNumber() {
-        val chats = listOf(
-            ChatSummary(1, "Alex", "+380 67 123", 1, 2, false, "+380 67 123"),
-            ChatSummary(2, "Work", "5 participants", 2, 5, true),
-        )
+        val chats =
+            listOf(
+                ChatSummary(1, "Alex", "+380 67 123", 1, 2, false, "+380 67 123"),
+                ChatSummary(2, "Work", "5 participants", 2, 5, true),
+            )
         assertEquals(listOf(1L), filterChats(chats, "alex").map { it.chatId })
         assertEquals(listOf(1L), filterChats(chats, "067123").map { it.chatId })
         assertEquals("38067123", normalizePhone("+380 (67) 123"))
@@ -40,22 +43,23 @@ class ModelLogicTest {
 
     @Test
     fun messageFormatterMapsTextLinksAndPlaceholders() {
-        val labels = MessageLabels(
-            empty = "<empty message>",
-            image = "<image>",
-            video = "<video>",
-            sticker = "<sticker>",
-            location = "<location>",
-            contact = "<contact>",
-            pinned = { "Pinned: $it" },
-            pinnedEmpty = "<pinned message>",
-            unknownType = { "<message type $it>" },
-            link = "<link>",
-            audio = "<audio>",
-            gif = "<GIF>",
-            file = "<file>",
-            deleted = "Deleted message",
-        )
+        val labels =
+            MessageLabels(
+                empty = "<empty message>",
+                image = "<image>",
+                video = "<video>",
+                sticker = "<sticker>",
+                location = "<location>",
+                contact = "<contact>",
+                pinned = { "Pinned: $it" },
+                pinnedEmpty = "<pinned message>",
+                unknownType = { "<message type $it>" },
+                link = "<link>",
+                audio = "<audio>",
+                gif = "<GIF>",
+                file = "<file>",
+                deleted = "Deleted message",
+            )
 
         assertEquals(MessageKind.TEXT, formatMessage(1, "Hello", null, labels).kind)
         assertEquals("Business notice", formatMessage(8, "Business notice", null, labels).displayText)
@@ -117,13 +121,29 @@ class ModelLogicTest {
 
     @Test
     fun messageSearchReturnsIndicesWithoutFilteringMessages() {
-        val messages = listOf(
-            message(1, "First"),
-            message(2, "Searchable text"),
-            message(3, "Another SEARCHABLE"),
-        )
+        val messages =
+            listOf(
+                message(1, "First"),
+                message(2, "Searchable text"),
+                message(3, "Another SEARCHABLE"),
+            )
         assertEquals(listOf(1, 2), findMessageMatches(messages, "searchable"))
         assertEquals(emptyList<Int>(), findMessageMatches(messages, ""))
+    }
+
+    @Test
+    fun daySeparatorsAreCalculatedOncePerLocalDay() {
+        val zone = ZoneId.of("Europe/Kyiv")
+        val firstDay = ZonedDateTime.of(2026, 7, 13, 23, 59, 0, 0, zone).toInstant().toEpochMilli()
+        val secondDay = ZonedDateTime.of(2026, 7, 14, 0, 1, 0, 0, zone).toInstant().toEpochMilli()
+        val messages =
+            listOf(
+                message(1, "First", firstDay),
+                message(2, "Second", firstDay + 30_000),
+                message(3, "Third", secondDay),
+            )
+
+        assertEquals(setOf(0, 2), findDaySeparatorIndices(messages, zone))
     }
 
     @Test
@@ -136,9 +156,28 @@ class ModelLogicTest {
         )
     }
 
-    private fun message(id: Long, text: String) = ChatMessage(
+    @Test
+    fun webLinksStopAtWhitespaceBracketsAndQuotes() {
+        val text = "https://example.com/one next <https://example.com/two> [https://example.com/three] \"https://example.com/four\""
+
+        assertEquals(
+            listOf(
+                "https://example.com/one",
+                "https://example.com/two",
+                "https://example.com/three",
+                "https://example.com/four",
+            ),
+            findWebLinks(text).map { it.url },
+        )
+    }
+
+    private fun message(
+        id: Long,
+        text: String,
+        timestamp: Long = id,
+    ) = ChatMessage(
         eventId = id,
-        timestamp = id,
+        timestamp = timestamp,
         direction = 0,
         senderName = "",
         kind = MessageKind.TEXT,
@@ -146,20 +185,21 @@ class ModelLogicTest {
         searchableText = text,
     )
 
-    private fun labels() = MessageLabels(
-        empty = "<empty message>",
-        image = "<image>",
-        video = "<video>",
-        sticker = "<sticker>",
-        location = "<location>",
-        contact = "<contact>",
-        pinned = { "Pinned: $it" },
-        pinnedEmpty = "<pinned message>",
-        unknownType = { "<message type $it>" },
-        link = "<link>",
-        audio = "<audio>",
-        gif = "<GIF>",
-        file = "<file>",
-        deleted = "Deleted message",
-    )
+    private fun labels() =
+        MessageLabels(
+            empty = "<empty message>",
+            image = "<image>",
+            video = "<video>",
+            sticker = "<sticker>",
+            location = "<location>",
+            contact = "<contact>",
+            pinned = { "Pinned: $it" },
+            pinnedEmpty = "<pinned message>",
+            unknownType = { "<message type $it>" },
+            link = "<link>",
+            audio = "<audio>",
+            gif = "<GIF>",
+            file = "<file>",
+            deleted = "Deleted message",
+        )
 }

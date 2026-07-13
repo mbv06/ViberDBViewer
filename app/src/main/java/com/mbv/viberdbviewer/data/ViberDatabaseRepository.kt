@@ -20,14 +20,19 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
-class DatabaseImportException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class DatabaseImportException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 private enum class ViberDatabaseFormat {
     DESKTOP,
     ANDROID,
 }
 
-class ViberDatabaseRepository(context: Context) : Closeable {
+class ViberDatabaseRepository(
+    context: Context,
+) : Closeable {
     private val appContext = context.applicationContext
     private val databaseDir = File(appContext.filesDir, "viber_viewer")
     private val activeFile = File(databaseDir, "imported.db")
@@ -40,174 +45,192 @@ class ViberDatabaseRepository(context: Context) : Closeable {
     @Volatile
     private var databaseFormat: ViberDatabaseFormat? = null
 
-    private val messageLabels = MessageLabels(
-        empty = text(R.string.message_empty),
-        image = text(R.string.message_image),
-        video = text(R.string.message_video),
-        sticker = text(R.string.message_sticker),
-        location = text(R.string.message_location),
-        contact = text(R.string.message_contact),
-        pinned = { text(R.string.message_pinned, it) },
-        pinnedEmpty = text(R.string.message_pinned_empty),
-        unknownType = { text(R.string.message_unknown_type, it) },
-        link = text(R.string.message_link),
-        audio = text(R.string.message_audio),
-        gif = text(R.string.message_gif),
-        file = text(R.string.message_file),
-        deleted = text(R.string.message_deleted),
-    )
+    private val messageLabels =
+        MessageLabels(
+            empty = text(R.string.message_empty),
+            image = text(R.string.message_image),
+            video = text(R.string.message_video),
+            sticker = text(R.string.message_sticker),
+            location = text(R.string.message_location),
+            contact = text(R.string.message_contact),
+            pinned = { text(R.string.message_pinned, it) },
+            pinnedEmpty = text(R.string.message_pinned_empty),
+            unknownType = { text(R.string.message_unknown_type, it) },
+            link = text(R.string.message_link),
+            audio = text(R.string.message_audio),
+            gif = text(R.string.message_gif),
+            file = text(R.string.message_file),
+            deleted = text(R.string.message_deleted),
+        )
 
     private val androidReader = AndroidViberDatabaseReader(appContext, messageLabels)
 
-    fun userMessage(error: Exception): String = when (error) {
-        is DatabaseImportException -> error.message ?: text(R.string.database_error_title)
-        else -> text(R.string.error_unexpected, error.message ?: text(R.string.error_unknown_reason))
-    }
-
-    suspend fun openExisting(): Boolean = withContext(Dispatchers.IO) {
-        if (!activeFile.isFile) return@withContext false
-        val format = validateDatabase(activeFile)
-        replaceOpenDatabase(openReadOnly(activeFile), format)
-        true
-    }
-
-    suspend fun importDatabase(uri: Uri) = withContext(Dispatchers.IO) {
-        databaseDir.mkdirs()
-        candidateFile.delete()
-        try {
-            appContext.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(candidateFile).use { output ->
-                    input.copyTo(output, DEFAULT_BUFFER_SIZE)
-                    output.fd.sync()
-                }
-            } ?: throw DatabaseImportException(text(R.string.error_open_selected_file))
-
-            val format = validateDatabase(candidateFile)
-            installCandidate(format)
-        } catch (error: DatabaseImportException) {
-            candidateFile.delete()
-            throw error
-        } catch (error: Exception) {
-            candidateFile.delete()
-            throw DatabaseImportException(
-                text(R.string.error_import_database, error.message ?: text(R.string.error_unknown)),
-                error,
-            )
+    fun userMessage(error: Exception): String =
+        when (error) {
+            is DatabaseImportException -> error.message ?: text(R.string.database_error_title)
+            else -> text(R.string.error_unexpected, error.message ?: text(R.string.error_unknown_reason))
         }
-    }
 
-    suspend fun loadChats(): List<ChatSummary> = withContext(Dispatchers.IO) {
-        val db = requireDatabase()
-        if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
-            return@withContext androidReader.loadChats(db)
+    suspend fun openExisting(): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!activeFile.isFile) return@withContext false
+            val format = validateDatabase(activeFile)
+            replaceOpenDatabase(openReadOnly(activeFile), format)
+            true
         }
-        val selfId = findSelfContactId(db)
-        val contacts = loadContacts(db)
-        val relations = loadRelations(db)
-        val chats = mutableListOf<ChatSummary>()
 
-        db.rawQuery(
-            """
-            SELECT ci.ChatID, ci.Name, COUNT(e.EventID), MAX(e.TimeStamp)
-            FROM ChatInfo ci
-            INNER JOIN Events e ON e.ChatID = ci.ChatID
-            INNER JOIN Messages m
-                ON m.EventID = e.EventID
-                AND m.Type <> 0
-                AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
-            GROUP BY ci.ChatID, ci.Name
-            ORDER BY MAX(e.TimeStamp) DESC, ci.ChatID DESC
-            """.trimIndent(),
-            null,
-        ).use { cursor ->
-            while (cursor.moveToNext()) {
-                val chatId = cursor.getLong(0)
-                val chatName = cursor.stringOrNull(1).clean()
-                val participantIds = relations[chatId].orEmpty()
-                val nonSelfParticipants = participantIds.filter { it != selfId }
-                val isGroup = chatName != null || nonSelfParticipants.size > 1
-                val directId = nonSelfParticipants.firstOrNull() ?: participantIds.firstOrNull()
-                val directContact = directId?.let(contacts::get)
-                val title = when {
-                    chatName != null -> chatName
-                    isGroup -> text(R.string.fallback_group_chat, chatId)
-                    else -> text(R.string.fallback_chat, chatId)
-                        .let { fallback -> directContact?.displayName(fallback) ?: fallback }
-                }
-                val subtitle = if (isGroup) {
-                    appContext.resources.getQuantityString(
-                        R.plurals.participant_count,
-                        participantIds.size,
-                        participantIds.size,
-                    )
-                } else {
-                    directContact?.number.clean().orEmpty()
-                }
-                chats += ChatSummary(
-                    chatId = chatId,
-                    title = title,
-                    subtitle = subtitle,
-                    lastTimestamp = cursor.getLong(3),
-                    participantCount = participantIds.size,
-                    isGroup = isGroup,
-                    searchNumber = if (isGroup) "" else directContact?.number.orEmpty(),
+    suspend fun importDatabase(uri: Uri) =
+        withContext(Dispatchers.IO) {
+            databaseDir.mkdirs()
+            candidateFile.delete()
+            try {
+                appContext.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(candidateFile).use { output ->
+                        input.copyTo(output, DEFAULT_BUFFER_SIZE)
+                        output.fd.sync()
+                    }
+                } ?: throw DatabaseImportException(text(R.string.error_open_selected_file))
+
+                val format = validateDatabase(candidateFile)
+                installCandidate(format)
+            } catch (error: DatabaseImportException) {
+                candidateFile.delete()
+                throw error
+            } catch (error: Exception) {
+                candidateFile.delete()
+                throw DatabaseImportException(
+                    text(R.string.error_import_database, error.message ?: text(R.string.error_unknown)),
+                    error,
                 )
             }
         }
-        chats
-    }
 
-    suspend fun loadMessages(chatId: Long): List<ChatMessage> = withContext(Dispatchers.IO) {
-        val db = requireDatabase()
-        if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
-            return@withContext androidReader.loadMessages(db, chatId)
-        }
-        val messages = ArrayList<ChatMessage>()
-        db.rawQuery(
-            """
-            SELECT e.EventID, e.TimeStamp, e.Direction, e.ContactID, m.Type, m.Body,
-                   CASE WHEN m.Type IN (9, 11, 15) THEN m.Info ELSE NULL END,
-                   c.Name, c.ClientName, c.Number
-            FROM Events e
-            INNER JOIN Messages m ON m.EventID = e.EventID
-            LEFT JOIN Contact c ON c.ContactID = e.ContactID
-            WHERE e.ChatID = ?
-              AND m.Type <> 0
-              AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
-            ORDER BY e.TimeStamp ASC, e.SortOrder ASC, e.EventID ASC
-            """.trimIndent(),
-            arrayOf(chatId.toString()),
-        ).use { cursor ->
-            while (cursor.moveToNext()) {
-                val eventId = cursor.getLong(0)
-                val type = cursor.getInt(4)
-                val formatted = formatMessage(
-                    type,
-                    cursor.stringOrNull(5),
-                    cursor.stringOrNull(6),
-                    messageLabels,
-                )
-                val sender = ContactRecord(
-                    contactId = cursor.longOrNull(3) ?: -1,
-                    name = cursor.stringOrNull(7),
-                    clientName = cursor.stringOrNull(8),
-                    number = cursor.stringOrNull(9),
-                ).displayName(text(R.string.unknown_sender))
-                messages += ChatMessage(
-                    eventId = eventId,
-                    timestamp = cursor.getLong(1),
-                    direction = cursor.getInt(2),
-                    senderName = sender,
-                    kind = formatted.kind,
-                    displayText = formatted.displayText,
-                    searchableText = formatted.searchableText,
-                )
+    suspend fun loadChats(): List<ChatSummary> =
+        withContext(Dispatchers.IO) {
+            val db = requireDatabase()
+            if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
+                return@withContext androidReader.loadChats(db)
             }
-        }
-        messages
-    }
+            val selfId = findSelfContactId(db)
+            val contacts = loadContacts(db)
+            val relations = loadRelations(db)
+            val chats = mutableListOf<ChatSummary>()
 
-    suspend fun searchMessages(query: String, limit: Int = 200): List<GlobalSearchResult> =
+            db
+                .rawQuery(
+                    """
+                    SELECT ci.ChatID, ci.Name, COUNT(e.EventID), MAX(e.TimeStamp)
+                    FROM ChatInfo ci
+                    INNER JOIN Events e ON e.ChatID = ci.ChatID
+                    INNER JOIN Messages m
+                        ON m.EventID = e.EventID
+                        AND m.Type <> 0
+                        AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
+                    GROUP BY ci.ChatID, ci.Name
+                    ORDER BY MAX(e.TimeStamp) DESC, ci.ChatID DESC
+                    """.trimIndent(),
+                    null,
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val chatId = cursor.getLong(0)
+                        val chatName = cursor.stringOrNull(1).clean()
+                        val participantIds = relations[chatId].orEmpty()
+                        val nonSelfParticipants = participantIds.filter { it != selfId }
+                        val isGroup = chatName != null || nonSelfParticipants.size > 1
+                        val directId = nonSelfParticipants.firstOrNull() ?: participantIds.firstOrNull()
+                        val directContact = directId?.let(contacts::get)
+                        val title =
+                            when {
+                                chatName != null -> chatName
+                                isGroup -> text(R.string.fallback_group_chat, chatId)
+                                else ->
+                                    text(R.string.fallback_chat, chatId)
+                                        .let { fallback -> directContact?.displayName(fallback) ?: fallback }
+                            }
+                        val subtitle =
+                            if (isGroup) {
+                                appContext.resources.getQuantityString(
+                                    R.plurals.participant_count,
+                                    participantIds.size,
+                                    participantIds.size,
+                                )
+                            } else {
+                                directContact?.number.clean().orEmpty()
+                            }
+                        chats +=
+                            ChatSummary(
+                                chatId = chatId,
+                                title = title,
+                                subtitle = subtitle,
+                                lastTimestamp = cursor.getLong(3),
+                                participantCount = participantIds.size,
+                                isGroup = isGroup,
+                                searchNumber = if (isGroup) "" else directContact?.number.orEmpty(),
+                            )
+                    }
+                }
+            chats
+        }
+
+    suspend fun loadMessages(chatId: Long): List<ChatMessage> =
+        withContext(Dispatchers.IO) {
+            val db = requireDatabase()
+            if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
+                return@withContext androidReader.loadMessages(db, chatId)
+            }
+            val messages = ArrayList<ChatMessage>()
+            db
+                .rawQuery(
+                    """
+                    SELECT e.EventID, e.TimeStamp, e.Direction, e.ContactID, m.Type, m.Body,
+                           CASE WHEN m.Type IN (9, 11, 15) THEN m.Info ELSE NULL END,
+                           c.Name, c.ClientName, c.Number
+                    FROM Events e
+                    INNER JOIN Messages m ON m.EventID = e.EventID
+                    LEFT JOIN Contact c ON c.ContactID = e.ContactID
+                    WHERE e.ChatID = ?
+                      AND m.Type <> 0
+                      AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
+                    ORDER BY e.TimeStamp ASC, e.SortOrder ASC, e.EventID ASC
+                    """.trimIndent(),
+                    arrayOf(chatId.toString()),
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val eventId = cursor.getLong(0)
+                        val type = cursor.getInt(4)
+                        val formatted =
+                            formatMessage(
+                                type,
+                                cursor.stringOrNull(5),
+                                cursor.stringOrNull(6),
+                                messageLabels,
+                            )
+                        val sender =
+                            ContactRecord(
+                                contactId = cursor.longOrNull(3) ?: -1,
+                                name = cursor.stringOrNull(7),
+                                clientName = cursor.stringOrNull(8),
+                                number = cursor.stringOrNull(9),
+                            ).displayName(text(R.string.unknown_sender))
+                        messages +=
+                            ChatMessage(
+                                eventId = eventId,
+                                timestamp = cursor.getLong(1),
+                                direction = cursor.getInt(2),
+                                senderName = sender,
+                                kind = formatted.kind,
+                                displayText = formatted.displayText,
+                                searchableText = formatted.searchableText,
+                            )
+                    }
+                }
+            messages
+        }
+
+    suspend fun searchMessages(
+        query: String,
+        limit: Int = 200,
+    ): List<GlobalSearchResult> =
         withContext(Dispatchers.IO) {
             val needle = query.trim()
             if (needle.isEmpty()) return@withContext emptyList()
@@ -218,47 +241,51 @@ class ViberDatabaseRepository(context: Context) : Closeable {
                 return@withContext androidReader.searchMessages(db, needle, resultLimit)
             }
             val results = ArrayList<GlobalSearchResult>(minOf(resultLimit, 200))
-            db.rawQuery(
-                """
-                SELECT e.EventID, e.ChatID, e.TimeStamp, e.ContactID, m.Type, m.Body,
-                       CASE WHEN m.Type IN (9, 15) THEN m.Info ELSE NULL END,
-                       c.Name, c.ClientName, c.Number
-                FROM Events e
-                INNER JOIN Messages m ON m.EventID = e.EventID
-                LEFT JOIN Contact c ON c.ContactID = e.ContactID
-                WHERE m.Type <> 0
-                  AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
-                  AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (9, 15, 72))
-                ORDER BY e.TimeStamp DESC, e.SortOrder DESC, e.EventID DESC
-                """.trimIndent(),
-                null,
-            ).use { cursor ->
-                while (cursor.moveToNext() && results.size < resultLimit) {
-                    coroutineContext.ensureActive()
-                    val formatted = formatMessage(
-                        cursor.getInt(4),
-                        cursor.stringOrNull(5),
-                        cursor.stringOrNull(6),
-                        messageLabels,
-                    )
-                    if (!formatted.searchableText.contains(needle, ignoreCase = true)) continue
+            db
+                .rawQuery(
+                    """
+                    SELECT e.EventID, e.ChatID, e.TimeStamp, e.ContactID, m.Type, m.Body,
+                           CASE WHEN m.Type IN (9, 15) THEN m.Info ELSE NULL END,
+                           c.Name, c.ClientName, c.Number
+                    FROM Events e
+                    INNER JOIN Messages m ON m.EventID = e.EventID
+                    LEFT JOIN Contact c ON c.ContactID = e.ContactID
+                    WHERE m.Type <> 0
+                      AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
+                      AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (9, 15, 72))
+                    ORDER BY e.TimeStamp DESC, e.SortOrder DESC, e.EventID DESC
+                    """.trimIndent(),
+                    null,
+                ).use { cursor ->
+                    while (cursor.moveToNext() && results.size < resultLimit) {
+                        coroutineContext.ensureActive()
+                        val formatted =
+                            formatMessage(
+                                cursor.getInt(4),
+                                cursor.stringOrNull(5),
+                                cursor.stringOrNull(6),
+                                messageLabels,
+                            )
+                        if (!formatted.searchableText.contains(needle, ignoreCase = true)) continue
 
-                    val sender = ContactRecord(
-                        contactId = cursor.longOrNull(3) ?: -1,
-                        name = cursor.stringOrNull(7),
-                        clientName = cursor.stringOrNull(8),
-                        number = cursor.stringOrNull(9),
-                    ).displayName(text(R.string.unknown_sender))
-                    results += GlobalSearchResult(
-                        chatId = cursor.getLong(1),
-                        eventId = cursor.getLong(0),
-                        timestamp = cursor.getLong(2),
-                        senderName = sender,
-                        kind = formatted.kind,
-                        displayText = formatted.displayText,
-                    )
+                        val sender =
+                            ContactRecord(
+                                contactId = cursor.longOrNull(3) ?: -1,
+                                name = cursor.stringOrNull(7),
+                                clientName = cursor.stringOrNull(8),
+                                number = cursor.stringOrNull(9),
+                            ).displayName(text(R.string.unknown_sender))
+                        results +=
+                            GlobalSearchResult(
+                                chatId = cursor.getLong(1),
+                                eventId = cursor.getLong(0),
+                                timestamp = cursor.getLong(2),
+                                senderName = sender,
+                                kind = formatted.kind,
+                                displayText = formatted.displayText,
+                            )
+                    }
                 }
-            }
             results
         }
 
@@ -293,11 +320,12 @@ class ViberDatabaseRepository(context: Context) : Closeable {
 
     private fun validateDatabase(file: File): ViberDatabaseFormat {
         if (!hasSqliteHeader(file)) throw DatabaseImportException(text(R.string.error_not_sqlite))
-        val db = try {
-            openReadOnly(file)
-        } catch (error: Exception) {
-            throw DatabaseImportException(text(R.string.error_corrupt_or_encrypted), error)
-        }
+        val db =
+            try {
+                openReadOnly(file)
+            } catch (error: Exception) {
+                throw DatabaseImportException(text(R.string.error_corrupt_or_encrypted), error)
+            }
         try {
             db.rawQuery("PRAGMA quick_check", null).use { cursor ->
                 if (!cursor.moveToFirst() || cursor.getString(0) != "ok") {
@@ -349,19 +377,20 @@ class ViberDatabaseRepository(context: Context) : Closeable {
         }
 
     private fun findSelfContactId(db: SQLiteDatabase): Long? {
-        db.rawQuery(
-            """
-            SELECT ContactID
-            FROM Events
-            WHERE Direction = 1 AND ContactID IS NOT NULL
-            GROUP BY ContactID
-            ORDER BY COUNT(*) DESC
-            LIMIT 1
-            """.trimIndent(),
-            null,
-        ).use { cursor ->
-            if (cursor.moveToFirst()) return cursor.getLong(0)
-        }
+        db
+            .rawQuery(
+                """
+                SELECT ContactID
+                FROM Events
+                WHERE Direction = 1 AND ContactID IS NOT NULL
+                GROUP BY ContactID
+                ORDER BY COUNT(*) DESC
+                LIMIT 1
+                """.trimIndent(),
+                null,
+            ).use { cursor ->
+                if (cursor.moveToFirst()) return cursor.getLong(0)
+            }
         db.rawQuery("SELECT ContactID FROM Contact WHERE ContactID = 1", null).use { cursor ->
             return if (cursor.moveToFirst()) cursor.getLong(0) else null
         }
@@ -371,12 +400,13 @@ class ViberDatabaseRepository(context: Context) : Closeable {
         val contacts = mutableMapOf<Long, ContactRecord>()
         db.rawQuery("SELECT ContactID, Name, ClientName, Number FROM Contact", null).use { cursor ->
             while (cursor.moveToNext()) {
-                val contact = ContactRecord(
-                    contactId = cursor.getLong(0),
-                    name = cursor.stringOrNull(1),
-                    clientName = cursor.stringOrNull(2),
-                    number = cursor.stringOrNull(3),
-                )
+                val contact =
+                    ContactRecord(
+                        contactId = cursor.getLong(0),
+                        name = cursor.stringOrNull(1),
+                        clientName = cursor.stringOrNull(2),
+                        number = cursor.stringOrNull(3),
+                    )
                 contacts[contact.contactId] = contact
             }
         }
@@ -393,7 +423,10 @@ class ViberDatabaseRepository(context: Context) : Closeable {
         return relations
     }
 
-    private fun text(id: Int, vararg formatArgs: Any): String = appContext.getString(id, *formatArgs)
+    private fun text(
+        id: Int,
+        vararg formatArgs: Any,
+    ): String = appContext.getString(id, *formatArgs)
 
     private fun requireDatabase(): SQLiteDatabase =
         database?.takeIf { it.isOpen }
@@ -422,46 +455,52 @@ class ViberDatabaseRepository(context: Context) : Closeable {
     override fun close() = closeDatabase()
 
     private fun Cursor.stringOrNull(index: Int): String? = if (isNull(index)) null else getString(index)
+
     private fun Cursor.longOrNull(index: Int): Long? = if (isNull(index)) null else getLong(index)
 
     companion object {
         private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 
-        private val DESKTOP_REQUIRED_SCHEMA = mapOf(
-            "ChatInfo" to setOf("chatid", "name"),
-            "ChatRelation" to setOf("chatid", "contactid"),
-            "Contact" to setOf("contactid", "name", "clientname", "number"),
-            "Events" to setOf("eventid", "timestamp", "direction", "chatid", "contactid", "sortorder"),
-            "Messages" to setOf("eventid", "type", "body", "info", "clientflag"),
-        )
+        private val DESKTOP_REQUIRED_SCHEMA =
+            mapOf(
+                "ChatInfo" to setOf("chatid", "name"),
+                "ChatRelation" to setOf("chatid", "contactid"),
+                "Contact" to setOf("contactid", "name", "clientname", "number"),
+                "Events" to setOf("eventid", "timestamp", "direction", "chatid", "contactid", "sortorder"),
+                "Messages" to setOf("eventid", "type", "body", "info", "clientflag"),
+            )
 
-        private val ANDROID_REQUIRED_SCHEMA = mapOf(
-            "conversations" to setOf("_id", "conversation_type", "name", "participant_id_1"),
-            "participants" to setOf("_id", "conversation_id", "participant_info_id", "active"),
-            "participants_info" to setOf(
-                "_id",
-                "number",
-                "contact_name",
-                "display_name",
-                "viber_name",
-            ),
-            "messages" to setOf(
-                "_id",
-                "conversation_id",
-                "participant_id",
-                "msg_date",
-                "send_type",
-                "body",
-                "order_key",
-                "deleted",
-                "extra_mime",
-                "msg_info",
-            ),
-        )
+        private val ANDROID_REQUIRED_SCHEMA =
+            mapOf(
+                "conversations" to setOf("_id", "conversation_type", "name", "participant_id_1"),
+                "participants" to setOf("_id", "conversation_id", "participant_info_id", "active"),
+                "participants_info" to
+                    setOf(
+                        "_id",
+                        "number",
+                        "contact_name",
+                        "display_name",
+                        "viber_name",
+                    ),
+                "messages" to
+                    setOf(
+                        "_id",
+                        "conversation_id",
+                        "participant_id",
+                        "msg_date",
+                        "send_type",
+                        "body",
+                        "order_key",
+                        "deleted",
+                        "extra_mime",
+                        "msg_info",
+                    ),
+            )
 
-        private val REQUIRED_SCHEMAS = linkedMapOf(
-            ViberDatabaseFormat.DESKTOP to DESKTOP_REQUIRED_SCHEMA,
-            ViberDatabaseFormat.ANDROID to ANDROID_REQUIRED_SCHEMA,
-        )
+        private val REQUIRED_SCHEMAS =
+            linkedMapOf(
+                ViberDatabaseFormat.DESKTOP to DESKTOP_REQUIRED_SCHEMA,
+                ViberDatabaseFormat.ANDROID to ANDROID_REQUIRED_SCHEMA,
+            )
     }
 }

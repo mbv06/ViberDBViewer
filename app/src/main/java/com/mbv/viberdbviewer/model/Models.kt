@@ -1,5 +1,9 @@
 package com.mbv.viberdbviewer.model
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+
 data class ChatSummary(
     val chatId: Long,
     val title: String,
@@ -78,7 +82,9 @@ data class ContactRecord(
     val viberName: String? = null,
 ) {
     fun displayName(fallback: String): String =
-        name.clean().orEmpty()
+        name
+            .clean()
+            .orEmpty()
             .ifEmpty { clientName.clean().orEmpty() }
             .ifEmpty { viberName.clean().orEmpty() }
             .ifEmpty { number.clean().orEmpty() }
@@ -89,8 +95,10 @@ fun String?.clean(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
 fun normalizePhone(value: String): String = value.filter(Char::isDigit)
 
-
-fun filterChats(chats: List<ChatSummary>, query: String): List<ChatSummary> {
+fun filterChats(
+    chats: List<ChatSummary>,
+    query: String,
+): List<ChatSummary> {
     val trimmed = query.trim()
     if (trimmed.isEmpty()) return chats
     val digits = normalizePhone(trimmed)
@@ -101,7 +109,10 @@ fun filterChats(chats: List<ChatSummary>, query: String): List<ChatSummary> {
     }
 }
 
-fun findMessageMatches(messages: List<ChatMessage>, query: String): List<Int> {
+fun findMessageMatches(
+    messages: List<ChatMessage>,
+    query: String,
+): List<Int> {
     val trimmed = query.trim()
     if (trimmed.isEmpty()) return emptyList()
     return messages.indices.filter { index ->
@@ -109,86 +120,121 @@ fun findMessageMatches(messages: List<ChatMessage>, query: String): List<Int> {
     }
 }
 
+fun findDaySeparatorIndices(
+    messages: List<ChatMessage>,
+    zoneId: ZoneId,
+): Set<Int> {
+    val separators = HashSet<Int>()
+    var previousDay: LocalDate? = null
+    messages.forEachIndexed { index, message ->
+        val day = Instant.ofEpochMilli(message.timestamp).atZone(zoneId).toLocalDate()
+        if (index == 0 || day != previousDay) separators += index
+        previousDay = day
+    }
+    return separators
+}
+
 fun formatMessage(
     type: Int,
     body: String?,
     info: String?,
     labels: MessageLabels,
-): FormattedMessage = when (type) {
-    1 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
-    2 -> formatted(MessageKind.IMAGE, labels.image)
-    3 -> formatted(MessageKind.VIDEO, labels.video)
-    4 -> formatted(MessageKind.STICKER, labels.sticker)
-    5 -> formatted(MessageKind.LOCATION, labels.location)
-    8 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
-    9 -> formatLink(body, info, labels)
-    10 -> formatted(MessageKind.CONTACT, labels.contact)
-    11 -> formatFile(info, labels)
-    15 -> {
-        val text = body.clean() ?: extractJsonString(info, "text").clean()
-        formatted(MessageKind.PINNED, text?.let(labels.pinned) ?: labels.pinnedEmpty)
+): FormattedMessage =
+    when (type) {
+        1 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
+        2 -> formatted(MessageKind.IMAGE, labels.image)
+        3 -> formatted(MessageKind.VIDEO, labels.video)
+        4 -> formatted(MessageKind.STICKER, labels.sticker)
+        5 -> formatted(MessageKind.LOCATION, labels.location)
+        8 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
+        9 -> formatLink(body, info, labels)
+        10 -> formatted(MessageKind.CONTACT, labels.contact)
+        11 -> formatFile(info, labels)
+        15 -> {
+            val text = body.clean() ?: extractJsonString(info, "text").clean()
+            formatted(MessageKind.PINNED, text?.let(labels.pinned) ?: labels.pinnedEmpty)
+        }
+        72 -> formatted(MessageKind.DELETED, labels.deleted)
+        else -> formatted(MessageKind.UNKNOWN, labels.unknownType(type))
     }
-    72 -> formatted(MessageKind.DELETED, labels.deleted)
-    else -> formatted(MessageKind.UNKNOWN, labels.unknownType(type))
-}
 
 fun formatAndroidMessage(
     extraMime: Int,
     body: String?,
     info: String?,
     labels: MessageLabels,
-): FormattedMessage = when (extraMime) {
-    0 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
-    1 -> formatted(MessageKind.IMAGE, labels.image)
-    3 -> formatted(MessageKind.VIDEO, labels.video)
-    4 -> formatted(MessageKind.STICKER, labels.sticker)
-    5 -> formatted(MessageKind.LOCATION, labels.location)
-    7 -> formatted(
-        MessageKind.TEXT,
-        extractJsonString(body, "Text").clean() ?: labels.empty,
-    )
-    8 -> formatLink(body, info, labels)
-    9 -> formatted(MessageKind.CONTACT, labels.contact)
-    10 -> formatted(MessageKind.FILE, labels.file)
-    1005 -> formatted(MessageKind.GIF, labels.gif)
-    1008 -> formatted(MessageKind.DELETED, labels.deleted)
-    1009 -> formatted(MessageKind.AUDIO, labels.audio)
-    1010 -> formatted(MessageKind.VIDEO, labels.video)
-    else -> formatted(MessageKind.UNKNOWN, labels.unknownType(extraMime))
-}
-
-private fun formatted(kind: MessageKind, text: String) = FormattedMessage(kind, text, text)
-
-private fun formatLink(body: String?, info: String?, labels: MessageLabels): FormattedMessage {
-    val text = body.clean()
-        ?: extractJsonString(info, "Text").clean()
-        ?: extractJsonString(info, "Title").clean()
-    val url = extractJsonString(info, "URL").clean()
-    val visible = when {
-        text != null && url != null && !text.contains(url, ignoreCase = true) -> "$text\n$url"
-        text != null -> text
-        url != null -> url
-        else -> labels.link
+): FormattedMessage =
+    when (extraMime) {
+        0 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
+        1 -> formatted(MessageKind.IMAGE, labels.image)
+        3 -> formatted(MessageKind.VIDEO, labels.video)
+        4 -> formatted(MessageKind.STICKER, labels.sticker)
+        5 -> formatted(MessageKind.LOCATION, labels.location)
+        7 ->
+            formatted(
+                MessageKind.TEXT,
+                extractJsonString(body, "Text").clean() ?: labels.empty,
+            )
+        8 -> formatLink(body, info, labels)
+        9 -> formatted(MessageKind.CONTACT, labels.contact)
+        10 -> formatted(MessageKind.FILE, labels.file)
+        1005 -> formatted(MessageKind.GIF, labels.gif)
+        1008 -> formatted(MessageKind.DELETED, labels.deleted)
+        1009 -> formatted(MessageKind.AUDIO, labels.audio)
+        1010 -> formatted(MessageKind.VIDEO, labels.video)
+        else -> formatted(MessageKind.UNKNOWN, labels.unknownType(extraMime))
     }
+
+private fun formatted(
+    kind: MessageKind,
+    text: String,
+) = FormattedMessage(kind, text, text)
+
+private fun formatLink(
+    body: String?,
+    info: String?,
+    labels: MessageLabels,
+): FormattedMessage {
+    val text =
+        body.clean()
+            ?: extractJsonString(info, "Text").clean()
+            ?: extractJsonString(info, "Title").clean()
+    val url = extractJsonString(info, "URL").clean()
+    val visible =
+        when {
+            text != null && url != null && !text.contains(url, ignoreCase = true) -> "$text\n$url"
+            text != null -> text
+            url != null -> url
+            else -> labels.link
+        }
     return formatted(MessageKind.LINK, visible)
 }
 
-private fun formatFile(info: String?, labels: MessageLabels): FormattedMessage {
+private fun formatFile(
+    info: String?,
+    labels: MessageLabels,
+): FormattedMessage {
     val source = info.orEmpty()
     return when {
-        Regex("\"audio_ptt\"\\s*:", RegexOption.IGNORE_CASE).containsMatchIn(source) ->
+        audioPttPattern.containsMatchIn(source) ->
             formatted(MessageKind.AUDIO, labels.audio)
-        Regex("\"MediaType\"\\s*:\\s*\"GIF\"", RegexOption.IGNORE_CASE)
-            .containsMatchIn(source) -> formatted(MessageKind.GIF, labels.gif)
+        gifMediaTypePattern.containsMatchIn(source) -> formatted(MessageKind.GIF, labels.gif)
         else -> formatted(MessageKind.FILE, labels.file)
     }
 }
 
-internal fun extractJsonString(json: String?, key: String): String? {
+private val audioPttPattern = Regex("\"audio_ptt\"\\s*:", RegexOption.IGNORE_CASE)
+private val gifMediaTypePattern = Regex("\"MediaType\"\\s*:\\s*\"GIF\"", RegexOption.IGNORE_CASE)
+
+internal fun extractJsonString(
+    json: String?,
+    key: String,
+): String? {
     if (json.isNullOrEmpty()) return null
     val escapedKey = Regex.escape(key)
-    val match = Regex("\"$escapedKey\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"")
-        .find(json) ?: return null
+    val match =
+        Regex("\"$escapedKey\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"")
+            .find(json) ?: return null
     return decodeJsonString(match.groupValues[1])
 }
 

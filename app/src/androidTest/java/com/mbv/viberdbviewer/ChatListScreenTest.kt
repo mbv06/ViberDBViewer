@@ -6,9 +6,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.test.platform.app.InstrumentationRegistry
 import com.mbv.viberdbviewer.model.ChatSummary
 import com.mbv.viberdbviewer.model.filterChats
 import com.mbv.viberdbviewer.ui.theme.ViberDBViewerTheme
@@ -18,15 +18,17 @@ import org.junit.Test
 
 class ChatListScreenTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
+
     @get:Rule
     val composeRule = createComposeRule()
 
     @Test
     fun filtersByNumberAndOpensSelectedChat() {
-        val allChats = listOf(
-            ChatSummary(1, "Alice", "+380 67 123", 2, 2, false, "+380 67 123"),
-            ChatSummary(2, "Team", "3 participants", 3, 3, true),
-        )
+        val allChats =
+            listOf(
+                ChatSummary(1, "Alice", "+380 67 123", 2, 2, false, "+380 67 123"),
+                ChatSummary(2, "Team", "3 participants", 3, 3, true),
+            )
         var query by mutableStateOf("")
         var selectedId: Long? = null
 

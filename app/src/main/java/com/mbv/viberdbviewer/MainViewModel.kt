@@ -1,17 +1,20 @@
 package com.mbv.viberdbviewer
 
-import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mbv.viberdbviewer.data.ViberDatabaseRepository
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
 import com.mbv.viberdbviewer.model.GlobalSearchResult
-import com.mbv.viberdbviewer.model.filterChats
+import com.mbv.viberdbviewer.model.findDaySeparatorIndices
 import com.mbv.viberdbviewer.model.findMessageMatches
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +22,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.ZoneId
 import kotlin.time.Duration.Companion.milliseconds
 
 data class ViewerUiState(
@@ -33,6 +38,7 @@ data class ViewerUiState(
     val isGlobalSearchLoading: Boolean = false,
     val selectedChat: ChatSummary? = null,
     val messages: List<ChatMessage> = emptyList(),
+    val daySeparatorIndices: Set<Int> = emptySet(),
     val isLoadingMessages: Boolean = false,
     val isMessageSearchVisible: Boolean = false,
     val messageQuery: String = "",
@@ -41,7 +47,6 @@ data class ViewerUiState(
     val scrollRequest: Long = 0,
     val error: String? = null,
 ) {
-    val filteredChats: List<ChatSummary> get() = filterChats(chats, chatQuery)
     val activeMessageIndex: Int?
         get() = matchIndices.getOrNull(activeMatchPosition)
 }
@@ -118,23 +123,24 @@ class MainViewModel(
         }
         if (needle.isEmpty()) return
 
-        globalSearchJob = viewModelScope.launch {
-            try {
-                delay(250.milliseconds)
-                val results = repository.searchMessages(needle)
-                if (_state.value.globalSearchQuery == query) {
+        globalSearchJob =
+            viewModelScope.launch {
+                try {
+                    delay(250.milliseconds)
+                    val results = repository.searchMessages(needle)
+                    if (_state.value.globalSearchQuery == query) {
+                        _state.update {
+                            it.copy(globalSearchResults = results, isGlobalSearchLoading = false)
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
                     _state.update {
-                        it.copy(globalSearchResults = results, isGlobalSearchLoading = false)
+                        it.copy(isGlobalSearchLoading = false, error = repository.userMessage(error))
                     }
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                _state.update {
-                    it.copy(isGlobalSearchLoading = false, error = repository.userMessage(error))
-                }
             }
-        }
     }
 
     fun selectChat(chat: ChatSummary) {
@@ -147,12 +153,17 @@ class MainViewModel(
         openChat(chat, current.globalSearchQuery.trim(), result.eventId)
     }
 
-    private fun openChat(chat: ChatSummary, initialQuery: String = "", targetEventId: Long? = null) {
+    private fun openChat(
+        chat: ChatSummary,
+        initialQuery: String = "",
+        targetEventId: Long? = null,
+    ) {
         messageLoadJob?.cancel()
         _state.update {
             it.copy(
                 selectedChat = chat,
                 messages = emptyList(),
+                daySeparatorIndices = emptySet(),
                 isLoadingMessages = true,
                 isMessageSearchVisible = initialQuery.isNotEmpty(),
                 messageQuery = initialQuery,
@@ -161,30 +172,38 @@ class MainViewModel(
                 error = null,
             )
         }
-        messageLoadJob = viewModelScope.launch {
-            try {
-                val messages = repository.loadMessages(chat.chatId)
-                if (_state.value.selectedChat?.chatId == chat.chatId) {
-                    val matches = findMessageMatches(messages, initialQuery)
-                    val targetIndex = targetEventId?.let { id ->
-                        messages.indexOfFirst { it.eventId == id }.takeIf { it >= 0 }
+        messageLoadJob =
+            viewModelScope.launch {
+                try {
+                    val messages = repository.loadMessages(chat.chatId)
+                    val daySeparatorIndices =
+                        withContext(Dispatchers.Default) {
+                            findDaySeparatorIndices(messages, ZoneId.systemDefault())
+                        }
+                    if (_state.value.selectedChat?.chatId == chat.chatId) {
+                        val matches = findMessageMatches(messages, initialQuery)
+                        val targetIndex =
+                            targetEventId?.let { id ->
+                                messages.indexOfFirst { it.eventId == id }.takeIf { it >= 0 }
+                            }
+                        val targetMatchPosition =
+                            targetIndex?.let(matches::indexOf)?.takeIf { it >= 0 }
+                                ?: matches.lastIndex
+                        _state.update {
+                            it.copy(
+                                messages = messages,
+                                daySeparatorIndices = daySeparatorIndices,
+                                isLoadingMessages = false,
+                                matchIndices = matches,
+                                activeMatchPosition = targetMatchPosition,
+                                scrollRequest = it.scrollRequest + 1,
+                            )
+                        }
                     }
-                    val targetMatchPosition = targetIndex?.let(matches::indexOf)?.takeIf { it >= 0 }
-                        ?: matches.lastIndex
-                    _state.update {
-                        it.copy(
-                            messages = messages,
-                            isLoadingMessages = false,
-                            matchIndices = matches,
-                            activeMatchPosition = targetMatchPosition,
-                            scrollRequest = it.scrollRequest + 1,
-                        )
-                    }
+                } catch (error: Exception) {
+                    _state.update { it.copy(isLoadingMessages = false, error = repository.userMessage(error)) }
                 }
-            } catch (error: Exception) {
-                _state.update { it.copy(isLoadingMessages = false, error = repository.userMessage(error)) }
             }
-        }
     }
 
     fun closeChat() {
@@ -193,6 +212,7 @@ class MainViewModel(
             it.copy(
                 selectedChat = null,
                 messages = emptyList(),
+                daySeparatorIndices = emptySet(),
                 isLoadingMessages = false,
                 isMessageSearchVisible = false,
                 messageQuery = "",
@@ -231,21 +251,27 @@ class MainViewModel(
 
     fun previousMatch() {
         _state.update { current ->
-            if (current.activeMatchPosition <= 0) current
-            else current.copy(
-                activeMatchPosition = current.activeMatchPosition - 1,
-                scrollRequest = current.scrollRequest + 1,
-            )
+            if (current.activeMatchPosition <= 0) {
+                current
+            } else {
+                current.copy(
+                    activeMatchPosition = current.activeMatchPosition - 1,
+                    scrollRequest = current.scrollRequest + 1,
+                )
+            }
         }
     }
 
     fun nextMatch() {
         _state.update { current ->
-            if (current.activeMatchPosition < 0 || current.activeMatchPosition >= current.matchIndices.lastIndex) current
-            else current.copy(
-                activeMatchPosition = current.activeMatchPosition + 1,
-                scrollRequest = current.scrollRequest + 1,
-            )
+            if (current.activeMatchPosition < 0 || current.activeMatchPosition >= current.matchIndices.lastIndex) {
+                current
+            } else {
+                current.copy(
+                    activeMatchPosition = current.activeMatchPosition + 1,
+                    scrollRequest = current.scrollRequest + 1,
+                )
+            }
         }
     }
 
@@ -255,27 +281,28 @@ class MainViewModel(
 
     private suspend fun loadChatsAfterOpen() {
         val chats = repository.loadChats()
-        _state.value = ViewerUiState(
-            isStarting = false,
-            databaseReady = true,
-            chats = chats,
-        )
+        _state.value =
+            ViewerUiState(
+                isStarting = false,
+                databaseReady = true,
+                chats = chats,
+            )
     }
-
 
     override fun onCleared() {
         repository.close()
     }
 
-    class Factory(context: Context) : ViewModelProvider.Factory {
-        private val appContext = context.applicationContext
-
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
-                return MainViewModel(ViberDatabaseRepository(appContext)) as T
+    companion object {
+        val Factory: ViewModelProvider.Factory =
+            viewModelFactory {
+                initializer {
+                    val application =
+                        checkNotNull(this[APPLICATION_KEY]) {
+                            "Application is required to create MainViewModel"
+                        }
+                    MainViewModel(ViberDatabaseRepository(application))
+                }
             }
-            throw IllegalArgumentException("Unsupported ViewModel class: ${modelClass.name}")
-        }
     }
 }

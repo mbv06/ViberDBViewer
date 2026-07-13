@@ -1,5 +1,6 @@
 package com.mbv.viberdbviewer
 
+import android.content.ClipData
 import android.os.Bundle
 import android.text.format.DateFormat
 import androidx.activity.ComponentActivity
@@ -9,11 +10,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -49,13 +50,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -65,12 +68,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
 import com.mbv.viberdbviewer.model.GlobalSearchResult
 import com.mbv.viberdbviewer.model.MessageKind
+import com.mbv.viberdbviewer.model.filterChats
 import com.mbv.viberdbviewer.ui.theme.ViberDBViewerTheme
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -82,20 +89,25 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ViberDBViewerTheme {
-                val viewerViewModel: MainViewModel = viewModel(factory = MainViewModel.Factory(applicationContext))
+                val viewerViewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)
                 val state by viewerViewModel.state.collectAsState()
-                val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                    uri?.let(viewerViewModel::importDatabase)
-                }
+                val picker =
+                    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                        uri?.let(viewerViewModel::importDatabase)
+                    }
                 val pickDatabase = remember(picker) { { picker.launch(arrayOf("*/*")) } }
 
-                BackHandler(enabled = state.selectedChat != null) {
-                    viewerViewModel.closeChat()
+                BackHandler(enabled = state.selectedChat != null || state.isGlobalSearchVisible) {
+                    if (state.selectedChat != null) {
+                        viewerViewModel.closeChat()
+                    } else {
+                        viewerViewModel.setGlobalSearchVisible(false)
+                    }
                 }
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = MaterialTheme.colorScheme.background,
                 ) {
                     ViewerApp(
                         state = state,
@@ -150,54 +162,74 @@ fun ViewerApp(
         when {
             state.isStarting -> LoadingScreen(stringResource(R.string.loading_saved_database))
             !state.databaseReady -> DatabasePickerScreen(onPickDatabase)
-            state.selectedChat == null -> ChatListScreen(
-                chats = if (state.isGlobalSearchVisible) state.chats else state.filteredChats,
-                query = state.chatQuery,
-                onQueryChange = onChatQueryChange,
-                onChatSelected = onChatSelected,
-                onReplaceDatabase = onPickDatabase,
-                isGlobalSearchVisible = state.isGlobalSearchVisible,
-                globalSearchQuery = state.globalSearchQuery,
-                globalSearchResults = state.globalSearchResults,
-                isGlobalSearchLoading = state.isGlobalSearchLoading,
-                onGlobalSearchVisibilityChange = onGlobalSearchVisibilityChange,
-                onGlobalSearchQueryChange = onGlobalSearchQueryChange,
-                onGlobalSearchResultSelected = onGlobalSearchResultSelected,
-                chatListState = chatListState,
-                globalSearchListState = globalSearchListState,
-            )
-            else -> ConversationScreen(
-                chat = state.selectedChat,
-                messages = state.messages,
-                isLoading = state.isLoadingMessages,
-                searchVisible = state.isMessageSearchVisible,
-                searchQuery = state.messageQuery,
-                matchCount = state.matchIndices.size,
-                activeMatchPosition = state.activeMatchPosition,
-                activeMessageIndex = state.activeMessageIndex,
-                scrollRequest = state.scrollRequest,
-                onBack = onBack,
-                onSearchVisibilityChange = onSearchVisibilityChange,
-                onSearchQueryChange = onMessageQueryChange,
-                onPreviousMatch = onPreviousMatch,
-                onNextMatch = onNextMatch,
-            )
-        }
-
-        if (state.isImporting) {
-            Surface(color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f), modifier = Modifier.fillMaxSize()) {
-                Box(contentAlignment = Alignment.Center) {
-                    Card {
-                        Row(
-                            modifier = Modifier.padding(24.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CircularProgressIndicator(Modifier.size(28.dp))
-                            Spacer(Modifier.width(16.dp))
-                            Text(stringResource(R.string.importing_database))
+            state.selectedChat == null -> {
+                val displayedChats =
+                    if (state.isGlobalSearchVisible) {
+                        state.chats
+                    } else {
+                        remember(state.chats, state.chatQuery) {
+                            filterChats(state.chats, state.chatQuery)
                         }
                     }
-                }
+                ChatListScreen(
+                    chats = displayedChats,
+                    query = state.chatQuery,
+                    onQueryChange = onChatQueryChange,
+                    onChatSelected = onChatSelected,
+                    onReplaceDatabase = onPickDatabase,
+                    isGlobalSearchVisible = state.isGlobalSearchVisible,
+                    globalSearchQuery = state.globalSearchQuery,
+                    globalSearchResults = state.globalSearchResults,
+                    isGlobalSearchLoading = state.isGlobalSearchLoading,
+                    onGlobalSearchVisibilityChange = onGlobalSearchVisibilityChange,
+                    onGlobalSearchQueryChange = onGlobalSearchQueryChange,
+                    onGlobalSearchResultSelected = onGlobalSearchResultSelected,
+                    chatListState = chatListState,
+                    globalSearchListState = globalSearchListState,
+                )
+            }
+            else ->
+                ConversationScreen(
+                    chat = state.selectedChat,
+                    messages = state.messages,
+                    daySeparatorIndices = state.daySeparatorIndices,
+                    isLoading = state.isLoadingMessages,
+                    searchVisible = state.isMessageSearchVisible,
+                    searchQuery = state.messageQuery,
+                    matchCount = state.matchIndices.size,
+                    activeMatchPosition = state.activeMatchPosition,
+                    activeMessageIndex = state.activeMessageIndex,
+                    scrollRequest = state.scrollRequest,
+                    onBack = onBack,
+                    onSearchVisibilityChange = onSearchVisibilityChange,
+                    onSearchQueryChange = onMessageQueryChange,
+                    onPreviousMatch = onPreviousMatch,
+                    onNextMatch = onNextMatch,
+                )
+        }
+    }
+
+    if (state.isImporting) ImportingDialog()
+}
+
+@Composable
+private fun ImportingDialog() {
+    Dialog(
+        onDismissRequest = {},
+        properties =
+            DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+            ),
+    ) {
+        Card {
+            Row(
+                modifier = Modifier.padding(24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(Modifier.size(28.dp))
+                Spacer(Modifier.width(16.dp))
+                Text(stringResource(R.string.importing_database))
             }
         }
     }
@@ -248,6 +280,8 @@ fun ChatListScreen(
     chatListState: LazyListState = rememberLazyListState(),
     globalSearchListState: LazyListState = rememberLazyListState(),
 ) {
+    val dateFormats = rememberViewerDateFormats()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -275,6 +309,7 @@ fun ChatListScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (isGlobalSearchVisible) {
+                val chatTitlesById = remember(chats) { chats.associate { it.chatId to it.title } }
                 OutlinedTextField(
                     value = globalSearchQuery,
                     onValueChange = onGlobalSearchQueryChange,
@@ -306,11 +341,13 @@ fun ChatListScreen(
                     else -> {
                         LazyColumn(Modifier.fillMaxSize(), state = globalSearchListState) {
                             items(globalSearchResults, key = { it.eventId }) { result ->
-                                val chatTitle = chats.firstOrNull { it.chatId == result.chatId }?.title
-                                    ?: stringResource(R.string.fallback_chat, result.chatId)
+                                val chatTitle =
+                                    chatTitlesById[result.chatId]
+                                        ?: stringResource(R.string.fallback_chat, result.chatId)
                                 GlobalSearchRow(
                                     result = result,
                                     chatTitle = chatTitle,
+                                    dateFormats = dateFormats,
                                     onClick = { onGlobalSearchResultSelected(result) },
                                 )
                                 HorizontalDivider()
@@ -346,7 +383,7 @@ fun ChatListScreen(
                 } else {
                     LazyColumn(Modifier.fillMaxSize(), state = chatListState) {
                         items(chats, key = { it.chatId }) { chat ->
-                            ChatRow(chat, onClick = { onChatSelected(chat) })
+                            ChatRow(chat, dateFormats, onClick = { onChatSelected(chat) })
                             HorizontalDivider()
                         }
                     }
@@ -360,11 +397,15 @@ fun ChatListScreen(
 private fun GlobalSearchRow(
     result: GlobalSearchResult,
     chatTitle: String,
+    dateFormats: ViewerDateFormats,
     onClick: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -375,7 +416,7 @@ private fun GlobalSearchRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(12.dp))
-            Text(formatChatTime(result.timestamp), style = MaterialTheme.typography.labelMedium)
+            Text(dateFormats.formatChatTime(result.timestamp), style = MaterialTheme.typography.labelMedium)
         }
         if (result.senderName.isNotBlank()) {
             Text(
@@ -388,38 +429,51 @@ private fun GlobalSearchRow(
         }
         Text(
             result.displayText,
-            style = if (result.kind == MessageKind.DELETED) {
-                MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
-            } else {
-                MaterialTheme.typography.bodyMedium
-            },
-            color = if (result.kind == MessageKind.DELETED) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                Color.Unspecified
-            },
+            style =
+                if (result.kind == MessageKind.DELETED) {
+                    MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
+                } else {
+                    MaterialTheme.typography.bodyMedium
+                },
+            color =
+                if (result.kind == MessageKind.DELETED) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    Color.Unspecified
+                },
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
-    val clipboardManager = LocalClipboardManager.current
+private fun ChatRow(
+    chat: ChatSummary,
+    dateFormats: ViewerDateFormats,
+    onClick: () -> Unit,
+) {
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = {
-                    val textToCopy = if (chat.subtitle.isNotBlank()) "${chat.title} ${chat.subtitle}" else chat.title
-                    clipboardManager.setText(AnnotatedString(textToCopy))
-                }
-            )
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = {
+                        val textToCopy =
+                            if (chat.subtitle.isNotBlank()) {
+                                "${chat.title} ${chat.subtitle}"
+                            } else {
+                                chat.title
+                            }
+                        coroutineScope.launch {
+                            clipboard.setClipEntry(ClipData.newPlainText(null, textToCopy).toClipEntry())
+                        }
+                    },
+                ).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -429,7 +483,7 @@ private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(formatChatTime(chat.lastTimestamp), style = MaterialTheme.typography.labelMedium)
+        Text(dateFormats.formatChatTime(chat.lastTimestamp), style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -438,6 +492,7 @@ private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
 private fun ConversationScreen(
     chat: ChatSummary,
     messages: List<ChatMessage>,
+    daySeparatorIndices: Set<Int>,
     isLoading: Boolean,
     searchVisible: Boolean,
     searchQuery: String,
@@ -451,6 +506,8 @@ private fun ConversationScreen(
     onPreviousMatch: () -> Unit,
     onNextMatch: () -> Unit,
 ) {
+    val dateFormats = rememberViewerDateFormats()
+
     Scaffold(
         topBar = {
             Column {
@@ -461,7 +518,7 @@ private fun ConversationScreen(
                             Text(chat.subtitle, style = MaterialTheme.typography.labelMedium)
                         }
                     },
-                    navigationIcon = { TextButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) } },
+                    navigationIcon = { TextButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.headlineMedium) } },
                     actions = {
                         TextButton(onClick = { onSearchVisibilityChange(!searchVisible) }) {
                             Text(stringResource(if (searchVisible) R.string.action_close else R.string.action_search))
@@ -488,10 +545,12 @@ private fun ConversationScreen(
         } else {
             MessageList(
                 messages = messages,
+                daySeparatorIndices = daySeparatorIndices,
                 isGroup = chat.isGroup,
                 query = searchQuery,
                 activeMessageIndex = activeMessageIndex,
                 scrollRequest = scrollRequest,
+                dateFormats = dateFormats,
                 modifier = Modifier.padding(padding),
             )
         }
@@ -520,18 +579,24 @@ private fun MessageSearchBar(
         )
         Spacer(Modifier.width(8.dp))
         Text(if (matchCount == 0) "0/0" else "${activePosition + 1}/$matchCount")
-        TextButton(onClick = onPrevious, enabled = activePosition > 0) { Text("↑") }
-        TextButton(onClick = onNext, enabled = activePosition in 0 until matchCount - 1) { Text("↓") }
+        TextButton(onClick = onPrevious, enabled = activePosition > 0) {
+            Text("↑", style = MaterialTheme.typography.headlineMedium)
+        }
+        TextButton(onClick = onNext, enabled = activePosition in 0 until matchCount - 1) {
+            Text("↓", style = MaterialTheme.typography.headlineMedium)
+        }
     }
 }
 
 @Composable
 private fun MessageList(
     messages: List<ChatMessage>,
+    daySeparatorIndices: Set<Int>,
     isGroup: Boolean,
     query: String,
     activeMessageIndex: Int?,
     scrollRequest: Long,
+    dateFormats: ViewerDateFormats,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -552,49 +617,62 @@ private fun MessageList(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         itemsIndexed(messages, key = { _, message -> message.eventId }) { index, message ->
-            val currentDay = messageDay(message.timestamp)
-            val previousDay = messages.getOrNull(index - 1)?.let { messageDay(it.timestamp) }
-            if (index == 0 || currentDay != previousDay) DateDivider(message.timestamp)
+            if (index in daySeparatorIndices) DateDivider(message.timestamp, dateFormats)
             MessageBubble(
                 message = message,
                 showSender = isGroup && !message.isOutgoing,
                 query = query,
                 active = index == activeMessageIndex,
+                dateFormats = dateFormats,
             )
         }
     }
 }
 
 @Composable
-private fun DateDivider(timestamp: Long) {
+private fun DateDivider(
+    timestamp: Long,
+    dateFormats: ViewerDateFormats,
+) {
     Row(
         Modifier.fillMaxWidth().padding(bottom = 6.dp),
         horizontalArrangement = Arrangement.Center,
     ) {
         Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Text(formatDay(timestamp), modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
+            Text(
+                dateFormats.longDate.format(Date(timestamp)),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: ChatMessage, showSender: Boolean, query: String, active: Boolean) {
-    val clipboardManager = LocalClipboardManager.current
+private fun MessageBubble(
+    message: ChatMessage,
+    showSender: Boolean,
+    query: String,
+    active: Boolean,
+    dateFormats: ViewerDateFormats,
+) {
+    val clipboard = LocalClipboard.current
+    val coroutineScope = rememberCoroutineScope()
 
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.isOutgoing) Arrangement.End else Arrangement.Start,
-    ) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
         Surface(
-            modifier = Modifier
-                .widthIn(max = 340.dp)
-                .combinedClickable(
-                    onClick = {},
-                    onLongClick = {
-                        clipboardManager.setText(AnnotatedString(message.displayText))
-                    }
-                ),
+            modifier =
+                Modifier
+                    .align(if (message.isOutgoing) Alignment.CenterEnd else Alignment.CenterStart)
+                    .widthIn(max = maxWidth * 0.75f)
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = {
+                            coroutineScope.launch {
+                                clipboard.setClipEntry(ClipData.newPlainText(null, message.displayText).toClipEntry())
+                            }
+                        },
+                    ),
             shape = RoundedCornerShape(14.dp),
             color = if (message.isOutgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
             border = if (active) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
@@ -617,7 +695,7 @@ private fun MessageBubble(message: ChatMessage, showSender: Boolean, query: Stri
                 }
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    formatMessageTime(message.timestamp),
+                    dateFormats.time.format(Date(message.timestamp)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.End),
@@ -628,22 +706,30 @@ private fun MessageBubble(message: ChatMessage, showSender: Boolean, query: Stri
 }
 
 @Composable
-private fun linkedAndHighlightedText(text: String, query: String) = run {
+private fun linkedAndHighlightedText(
+    text: String,
+    query: String,
+) = run {
     val linkColor = MaterialTheme.colorScheme.primary
-    remember(text, query, linkColor) {
+    val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
+    val onHighlightColor = MaterialTheme.colorScheme.onTertiaryContainer
+    val links = remember(text) { findWebLinks(text) }
+    remember(text, query, linkColor, highlightColor, onHighlightColor, links) {
         buildAnnotatedString {
             append(text)
 
-            findWebLinks(text).forEach { link ->
+            links.forEach { link ->
                 addLink(
                     LinkAnnotation.Url(
                         url = link.url,
-                        styles = TextLinkStyles(
-                            style = SpanStyle(
-                                color = linkColor,
-                                textDecoration = TextDecoration.Underline,
+                        styles =
+                            TextLinkStyles(
+                                style =
+                                    SpanStyle(
+                                        color = linkColor,
+                                        textDecoration = TextDecoration.Underline,
+                                    ),
                             ),
-                        ),
                     ),
                     start = link.start,
                     end = link.end,
@@ -657,7 +743,7 @@ private fun linkedAndHighlightedText(text: String, query: String) = run {
                     val match = text.indexOf(needle, cursor, ignoreCase = true)
                     if (match < 0) break
                     addStyle(
-                        SpanStyle(background = Color(0xFFFFE082), color = Color.Black),
+                        SpanStyle(background = highlightColor, color = onHighlightColor),
                         start = match,
                         end = match + needle.length,
                     )
@@ -674,39 +760,48 @@ internal data class DetectedWebLink(
     val end: Int,
 )
 
-private val webUrlPattern = Regex("https?://[^\\s<>{}\\[\\]\"]+", RegexOption.IGNORE_CASE)
+private val webUrlPattern = Regex("""https?://[^\s<>{}\[\]"]+""", RegexOption.IGNORE_CASE)
 private val trailingUrlPunctuation = charArrayOf('.', ',', ';', ':', '!', '?', ')', '\'', '»')
 
-internal fun findWebLinks(text: String): List<DetectedWebLink> = webUrlPattern.findAll(text).mapNotNull { match ->
-    val url = match.value.trimEnd(*trailingUrlPunctuation)
-    if (url.length <= match.value.indexOf("://") + 3) {
-        null
-    } else {
-        DetectedWebLink(url = url, start = match.range.first, end = match.range.first + url.length)
+internal fun findWebLinks(text: String): List<DetectedWebLink> =
+    webUrlPattern
+        .findAll(text)
+        .mapNotNull { match ->
+            val url = match.value.trimEnd(*trailingUrlPunctuation)
+            if (url.length <= match.value.indexOf("://") + 3) {
+                null
+            } else {
+                DetectedWebLink(url = url, start = match.range.first, end = match.range.first + url.length)
+            }
+        }.toList()
+
+@Composable
+private fun rememberViewerDateFormats(): ViewerDateFormats {
+    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    return remember(context, configuration) {
+        ViewerDateFormats(
+            time = DateFormat.getTimeFormat(context),
+            date = DateFormat.getDateFormat(context),
+            longDate = DateFormat.getLongDateFormat(context),
+            zoneId = ZoneId.systemDefault(),
+        )
     }
-}.toList()
-
-private fun zoned(timestamp: Long) = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault())
-private fun messageDay(timestamp: Long): LocalDate = zoned(timestamp).toLocalDate()
-@Composable
-private fun formatMessageTime(timestamp: Long): String {
-    val context = LocalContext.current
-    return DateFormat.getTimeFormat(context).format(Date(timestamp))
 }
 
-@Composable
-private fun formatDay(timestamp: Long): String {
-    val context = LocalContext.current
-    return DateFormat.getLongDateFormat(context).format(Date(timestamp))
-}
-
-@Composable
-private fun formatChatTime(timestamp: Long): String {
-    val context = LocalContext.current
-    val date = Date(timestamp)
-    return if (messageDay(timestamp) == LocalDate.now()) {
-        DateFormat.getTimeFormat(context).format(date)
-    } else {
-        DateFormat.getDateFormat(context).format(date)
+private data class ViewerDateFormats(
+    val time: java.text.DateFormat,
+    val date: java.text.DateFormat,
+    val longDate: java.text.DateFormat,
+    val zoneId: ZoneId,
+) {
+    fun formatChatTime(timestamp: Long): String {
+        val value = Date(timestamp)
+        val messageDay = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
+        return if (messageDay == LocalDate.now(zoneId)) {
+            time.format(value)
+        } else {
+            date.format(value)
+        }
     }
 }
