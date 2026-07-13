@@ -5,11 +5,13 @@ import android.text.format.DateFormat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -32,8 +35,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -48,17 +51,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mbv.viberdbviewer.model.ChatMessage
@@ -138,6 +143,9 @@ fun ViewerApp(
     onPreviousMatch: () -> Unit,
     onNextMatch: () -> Unit,
 ) {
+    val chatListState = rememberLazyListState()
+    val globalSearchListState = rememberLazyListState()
+
     Box(Modifier.fillMaxSize()) {
         when {
             state.isStarting -> LoadingScreen(stringResource(R.string.loading_saved_database))
@@ -155,6 +163,8 @@ fun ViewerApp(
                 onGlobalSearchVisibilityChange = onGlobalSearchVisibilityChange,
                 onGlobalSearchQueryChange = onGlobalSearchQueryChange,
                 onGlobalSearchResultSelected = onGlobalSearchResultSelected,
+                chatListState = chatListState,
+                globalSearchListState = globalSearchListState,
             )
             else -> ConversationScreen(
                 chat = state.selectedChat,
@@ -235,6 +245,8 @@ fun ChatListScreen(
     onGlobalSearchVisibilityChange: (Boolean) -> Unit = {},
     onGlobalSearchQueryChange: (String) -> Unit = {},
     onGlobalSearchResultSelected: (GlobalSearchResult) -> Unit = {},
+    chatListState: LazyListState = rememberLazyListState(),
+    globalSearchListState: LazyListState = rememberLazyListState(),
 ) {
     Scaffold(
         topBar = {
@@ -292,7 +304,7 @@ fun ChatListScreen(
                         }
                     }
                     else -> {
-                        LazyColumn(Modifier.fillMaxSize()) {
+                        LazyColumn(Modifier.fillMaxSize(), state = globalSearchListState) {
                             items(globalSearchResults, key = { it.eventId }) { result ->
                                 val chatTitle = chats.firstOrNull { it.chatId == result.chatId }?.title
                                     ?: stringResource(R.string.fallback_chat, result.chatId)
@@ -332,7 +344,7 @@ fun ChatListScreen(
                         Text(stringResource(if (query.isBlank()) R.string.no_chats else R.string.no_search_results))
                     }
                 } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize(), state = chatListState) {
                         items(chats, key = { it.chatId }) { chat ->
                             ChatRow(chat, onClick = { onChatSelected(chat) })
                             HorizontalDivider()
@@ -392,10 +404,22 @@ private fun GlobalSearchRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatRow(chat: ChatSummary, onClick: () -> Unit) {
+    val clipboardManager = LocalClipboardManager.current
+
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    val textToCopy = if (chat.subtitle.isNotBlank()) "${chat.title} ${chat.subtitle}" else chat.title
+                    clipboardManager.setText(AnnotatedString(textToCopy))
+                }
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -543,21 +567,34 @@ private fun MessageList(
 
 @Composable
 private fun DateDivider(timestamp: Long) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        horizontalArrangement = Arrangement.Center,
+    ) {
         Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
             Text(formatDay(timestamp), modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(message: ChatMessage, showSender: Boolean, query: String, active: Boolean) {
+    val clipboardManager = LocalClipboardManager.current
+
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = if (message.isOutgoing) Arrangement.End else Arrangement.Start,
     ) {
         Surface(
-            modifier = Modifier.widthIn(max = 340.dp),
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        clipboardManager.setText(AnnotatedString(message.displayText))
+                    }
+                ),
             shape = RoundedCornerShape(14.dp),
             color = if (message.isOutgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
             border = if (active) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,

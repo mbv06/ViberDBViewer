@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 data class ViewerUiState(
     val isStarting: Boolean = true,
@@ -119,7 +120,7 @@ class MainViewModel(
 
         globalSearchJob = viewModelScope.launch {
             try {
-                delay(250)
+                delay(250.milliseconds)
                 val results = repository.searchMessages(needle)
                 if (_state.value.globalSearchQuery == query) {
                     _state.update {
