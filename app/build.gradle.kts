@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.ktlint)
 }
 
 val releaseKeystorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
@@ -48,7 +50,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -58,6 +60,42 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = true
+        htmlReport = true
+        sarifReport = true
+        textReport = true
+        xmlReport = true
+
+        // Work around an Android Lint 32.2.1 crash in the experimental opt-in detector.
+        disable += setOf("UnsafeOptInUsageError", "UnsafeOptInUsageWarning")
+    }
+}
+
+ktlint {
+    additionalEditorconfig.set(
+        mapOf(
+            "ktlint_function_naming_ignore_when_annotated_with" to "Composable",
+        ),
+    )
+}
+
+detekt {
+    buildUponDefaultConfig = true
+    baseline.set(rootProject.layout.projectDirectory.file("config/detekt/baseline.xml"))
+    config.setFrom(rootProject.files("config/detekt/detekt.yml"))
+    parallel = true
+    basePath.set(rootProject.layout.projectDirectory)
+}
+
+tasks.withType<dev.detekt.gradle.Detekt>().configureEach {
+    reports {
+        checkstyle.required.set(true)
+        html.required.set(true)
+        sarif.required.set(true)
+        markdown.required.set(false)
     }
 }
 

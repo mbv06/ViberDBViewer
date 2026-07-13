@@ -8,6 +8,8 @@ on:
       - "**/*.gradle.kts"
       - "gradle.properties"
       - "gradle/**"
+      - ".editorconfig"
+      - "config/detekt/**"
       - "gradlew"
       - "gradlew.bat"
       - ".github/workflows/tests.yml"
@@ -18,6 +20,8 @@ on:
       - "**/*.gradle.kts"
       - "gradle.properties"
       - "gradle/**"
+      - ".editorconfig"
+      - "config/detekt/**"
       - "gradlew"
       - "gradlew.bat"
       - ".github/workflows/tests.yml"
@@ -30,6 +34,74 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  android-lint:
+    name: Android Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --stacktrace
+
+      - name: Upload Android Lint reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-lint-reports
+          path: app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14
+
+  static-analysis:
+    name: Detekt and ktlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Run static analysis
+        run: ./gradlew detekt ktlintCheck --stacktrace
+
+      - name: Upload static analysis reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: static-analysis-reports
+          path: |
+            app/build/reports/detekt/
+            app/build/reports/ktlint/
+          if-no-files-found: warn
+          retention-days: 14
+
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest

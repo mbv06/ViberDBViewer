@@ -1,0 +1,19 @@
+config:
+  validation: true
+  warningsAsErrors: true
+
+# Compose functions returning Unit conventionally use PascalCase names.
+naming:
+  FunctionNaming:
+    ignoreAnnotated:
+      - Composable
+
+# Default parameters are common in composable APIs and do not add call-site complexity.
+complexity:
+  LongParameterList:
+    ignoreDefaultParameters: true
+
+# Compose theme declarations commonly contain numeric color values.
+style:
+  MagicNumber:
+    ignorePropertyDeclaration: true

@@ -1,0 +1,51 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:AndroidViberDatabaseReader.kt:AndroidViberDatabaseReader$fun loadChats: List&lt;ChatSummary&gt;</ID>
+    <ID>CyclomaticComplexMethod:Models.kt:fun formatAndroidMessage: FormattedMessage</ID>
+    <ID>CyclomaticComplexMethod:Models.kt:fun formatMessage: FormattedMessage</ID>
+    <ID>CyclomaticComplexMethod:Models.kt:private fun decodeJsonString: String</ID>
+    <ID>LongMethod:AndroidViberDatabaseReader.kt:AndroidViberDatabaseReader$fun loadChats: List&lt;ChatSummary&gt;</ID>
+    <ID>LongMethod:MainActivity.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun ChatListScreen</ID>
+    <ID>LoopWithTooManyJumpStatements:Models.kt:while</ID>
+    <ID>MagicNumber:AndroidViberDatabaseReader.kt:AndroidViberDatabaseReader$3</ID>
+    <ID>MagicNumber:AndroidViberDatabaseReader.kt:AndroidViberDatabaseReader$4</ID>
+    <ID>MagicNumber:MainActivity.kt:200</ID>
+    <ID>MagicNumber:MainActivity.kt:3</ID>
+    <ID>MagicNumber:Models.kt:10</ID>
+    <ID>MagicNumber:Models.kt:1005</ID>
+    <ID>MagicNumber:Models.kt:1008</ID>
+    <ID>MagicNumber:Models.kt:1009</ID>
+    <ID>MagicNumber:Models.kt:1010</ID>
+    <ID>MagicNumber:Models.kt:11</ID>
+    <ID>MagicNumber:Models.kt:15</ID>
+    <ID>MagicNumber:Models.kt:3</ID>
+    <ID>MagicNumber:Models.kt:4</ID>
+    <ID>MagicNumber:Models.kt:5</ID>
+    <ID>MagicNumber:Models.kt:6</ID>
+    <ID>MagicNumber:Models.kt:7</ID>
+    <ID>MagicNumber:Models.kt:72</ID>
+    <ID>MagicNumber:Models.kt:8</ID>
+    <ID>MagicNumber:Models.kt:9</ID>
+    <ID>MagicNumber:ViberDatabaseRepository.kt:ViberDatabaseRepository$3</ID>
+    <ID>MaxLineLength:MainActivity.kt:MainActivity$TextButton(onClick = viewerViewModel::dismissError) { Text(stringResource(R.string.action_ok)) }</ID>
+    <ID>MaxLineLength:MainActivity.kt:Text("(${chat.subtitle})", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
+    <ID>MaxLineLength:MainActivity.kt:color = if (message.isOutgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer</ID>
+    <ID>MaxLineLength:MainActivity.kt:navigationIcon = { TextButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.headlineMedium) } }</ID>
+    <ID>MaxLineLength:MainViewModel.kt:MainViewModel$_state.update { it.copy(isImporting = false, isStarting = false, error = repository.userMessage(error)) }</ID>
+    <ID>MaxLineLength:MainViewModel.kt:MainViewModel$if</ID>
+    <ID>MaxLineLength:ModelLogicTest.kt:ModelLogicTest$val text = "https://example.com/one next &lt;https://example.com/two&gt; [https://example.com/three] \"https://example.com/four\""</ID>
+    <ID>NewLineAtEndOfFile:Color.kt:com.mbv.viberdbviewer.ui.theme.Color.kt</ID>
+    <ID>ReturnCount:Models.kt:internal fun extractJsonString: String?</ID>
+    <ID>ReturnCount:ViberDatabaseRepository.kt:ViberDatabaseRepository$private fun hasSqliteHeader: Boolean</ID>
+    <ID>ThrowsCount:ViberDatabaseRepository.kt:ViberDatabaseRepository$private fun installCandidate</ID>
+    <ID>ThrowsCount:ViberDatabaseRepository.kt:ViberDatabaseRepository$private fun validateDatabase: ViberDatabaseFormat</ID>
+    <ID>TooGenericExceptionCaught:MainViewModel.kt:MainViewModel$error: Exception</ID>
+    <ID>TooGenericExceptionCaught:ViberDatabaseRepository.kt:ViberDatabaseRepository$error: Exception</ID>
+    <ID>TooManyFunctions:MainActivity.kt:com.mbv.viberdbviewer.MainActivity.kt</ID>
+    <ID>TooManyFunctions:MainViewModel.kt:MainViewModel : ViewModel</ID>
+    <ID>TooManyFunctions:Models.kt:com.mbv.viberdbviewer.model.Models.kt</ID>
+    <ID>TooManyFunctions:ViberDatabaseRepository.kt:ViberDatabaseRepository : Closeable</ID>
+  </CurrentIssues>
+</SmellBaseline>
