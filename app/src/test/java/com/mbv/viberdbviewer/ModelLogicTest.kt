@@ -49,9 +49,13 @@ class ModelLogicTest {
             audio = "<audio>",
             gif = "<GIF>",
             file = "<file>",
+            deleted = "Deleted message",
         )
 
         assertEquals(MessageKind.TEXT, formatMessage(1, "Hello", null, labels).kind)
+        assertEquals("Business notice", formatMessage(8, "Business notice", null, labels).displayText)
+        assertEquals(MessageKind.DELETED, formatMessage(72, "ignored", null, labels).kind)
+        assertEquals("Deleted message", formatMessage(72, "ignored", null, labels).displayText)
         assertEquals("<image>", formatMessage(2, null, null, labels).displayText)
         assertEquals("<video>", formatMessage(3, null, null, labels).displayText)
         assertEquals(
@@ -76,6 +80,16 @@ class ModelLogicTest {
         )
         assertEquals(listOf(1, 2), findMessageMatches(messages, "searchable"))
         assertEquals(emptyList<Int>(), findMessageMatches(messages, ""))
+    }
+
+    @Test
+    fun webLinksDetectHttpAndHttpsWithoutTrailingPunctuation() {
+        val text = "Open https://example.com/a?q=1, then http://example.org/test. Ignore ftp://example.net"
+
+        assertEquals(
+            listOf("https://example.com/a?q=1", "http://example.org/test"),
+            findWebLinks(text).map { it.url },
+        )
     }
 
     private fun message(id: Long, text: String) = ChatMessage(

@@ -51,14 +51,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
+import com.mbv.viberdbviewer.model.MessageKind
 import com.mbv.viberdbviewer.ui.theme.ViberDBViewerTheme
 import java.time.Instant
 import java.time.LocalDate
@@ -420,7 +425,17 @@ private fun MessageBubble(message: ChatMessage, showSender: Boolean, query: Stri
                     Text(message.senderName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
                 }
-                Text(highlightMatches(message.displayText, query))
+                val annotatedText = linkedAndHighlightedText(message.displayText, query)
+                if (message.kind == MessageKind.DELETED) {
+                    Text(
+                        annotatedText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontStyle = FontStyle.Italic,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(annotatedText)
+                }
                 Spacer(Modifier.height(3.dp))
                 Text(
                     formatMessageTime(message.timestamp),
@@ -433,26 +448,64 @@ private fun MessageBubble(message: ChatMessage, showSender: Boolean, query: Stri
     }
 }
 
-private fun highlightMatches(text: String, query: String) = buildAnnotatedString {
-    val needle = query.trim()
-    if (needle.isEmpty()) {
-        append(text)
-        return@buildAnnotatedString
-    }
-    var cursor = 0
-    while (cursor < text.length) {
-        val match = text.indexOf(needle, cursor, ignoreCase = true)
-        if (match < 0) {
-            append(text.substring(cursor))
-            break
+@Composable
+private fun linkedAndHighlightedText(text: String, query: String) = run {
+    val linkColor = MaterialTheme.colorScheme.primary
+    remember(text, query, linkColor) {
+        buildAnnotatedString {
+            append(text)
+
+            findWebLinks(text).forEach { link ->
+                addLink(
+                    LinkAnnotation.Url(
+                        url = link.url,
+                        styles = TextLinkStyles(
+                            style = SpanStyle(
+                                color = linkColor,
+                                textDecoration = TextDecoration.Underline,
+                            ),
+                        ),
+                    ),
+                    start = link.start,
+                    end = link.end,
+                )
+            }
+
+            val needle = query.trim()
+            if (needle.isNotEmpty()) {
+                var cursor = 0
+                while (cursor < text.length) {
+                    val match = text.indexOf(needle, cursor, ignoreCase = true)
+                    if (match < 0) break
+                    addStyle(
+                        SpanStyle(background = Color(0xFFFFE082), color = Color.Black),
+                        start = match,
+                        end = match + needle.length,
+                    )
+                    cursor = match + needle.length
+                }
+            }
         }
-        append(text.substring(cursor, match))
-        pushStyle(SpanStyle(background = Color(0xFFFFE082), color = Color.Black))
-        append(text.substring(match, match + needle.length))
-        pop()
-        cursor = match + needle.length
     }
 }
+
+internal data class DetectedWebLink(
+    val url: String,
+    val start: Int,
+    val end: Int,
+)
+
+private val webUrlPattern = Regex("https?://[^\\s<>{}\\[\\]\"]+", RegexOption.IGNORE_CASE)
+private val trailingUrlPunctuation = charArrayOf('.', ',', ';', ':', '!', '?', ')', '\'', '»')
+
+internal fun findWebLinks(text: String): List<DetectedWebLink> = webUrlPattern.findAll(text).mapNotNull { match ->
+    val url = match.value.trimEnd(*trailingUrlPunctuation)
+    if (url.length <= match.value.indexOf("://") + 3) {
+        null
+    } else {
+        DetectedWebLink(url = url, start = match.range.first, end = match.range.first + url.length)
+    }
+}.toList()
 
 private fun zoned(timestamp: Long) = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault())
 private fun messageDay(timestamp: Long): LocalDate = zoned(timestamp).toLocalDate()

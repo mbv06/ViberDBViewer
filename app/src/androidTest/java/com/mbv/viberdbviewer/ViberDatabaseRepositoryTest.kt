@@ -49,9 +49,12 @@ class ViberDatabaseRepositoryTest {
         assertEquals("+380 67 123", chats[1].subtitle)
 
         val messages = repository.loadMessages(chats[1].chatId)
-        assertEquals(listOf(100L, 101L), messages.map { it.eventId })
+        assertEquals(listOf(100L, 103L, 104L, 101L), messages.map { it.eventId })
         assertEquals(MessageKind.IMAGE, messages[0].kind)
-        assertEquals(MessageKind.TEXT, messages[1].kind)
+        assertEquals("Business notice", messages[1].displayText)
+        assertEquals(MessageKind.DELETED, messages[2].kind)
+        assertEquals(context.getString(R.string.message_deleted), messages[2].displayText)
+        assertEquals(MessageKind.TEXT, messages[3].kind)
     }
 
     @Test
@@ -89,9 +92,15 @@ class ViberDatabaseRepositoryTest {
             db.execSQL("INSERT INTO ChatRelation VALUES(20, 3)")
             db.execSQL("INSERT INTO Events VALUES(100, 1000, 0, 10, 2, 100)")
             db.execSQL("INSERT INTO Events VALUES(101, 2000, 1, 10, 1, 101)")
+            db.execSQL("INSERT INTO Events VALUES(102, 5000, 0, 10, 2, 102)")
+            db.execSQL("INSERT INTO Events VALUES(103, 1500, 0, 10, 2, 103)")
+            db.execSQL("INSERT INTO Events VALUES(104, 1600, 0, 10, 2, 104)")
             db.execSQL("INSERT INTO Events VALUES(200, 3000, 0, 20, 3, 200)")
             db.execSQL("INSERT INTO Messages VALUES(100, 2, NULL, '{}')")
             db.execSQL("INSERT INTO Messages VALUES(101, 1, 'Hello', '{}')")
+            db.execSQL("INSERT INTO Messages VALUES(102, 0, NULL, '{}')")
+            db.execSQL("INSERT INTO Messages VALUES(103, 8, 'Business notice', '{}')")
+            db.execSQL("INSERT INTO Messages VALUES(104, 72, NULL, '{}')")
             db.execSQL("INSERT INTO Messages VALUES(200, 9, 'Website', '{\"URL\":\"https://example.com\"}')")
         }
     }

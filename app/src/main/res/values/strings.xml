@@ -40,6 +40,7 @@
     <string name="message_audio">&lt;audio&gt;</string>
     <string name="message_gif">&lt;GIF&gt;</string>
     <string name="message_file">&lt;file&gt;</string>
+    <string name="message_deleted">Deleted message</string>
 
     <string name="error_open_selected_file">Could not open the selected file</string>
     <string name="error_import_database">Could not import the database: %1$s</string>

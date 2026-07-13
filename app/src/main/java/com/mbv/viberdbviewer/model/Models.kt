@@ -34,6 +34,7 @@ enum class MessageKind {
     GIF,
     FILE,
     PINNED,
+    DELETED,
     UNKNOWN,
 }
 
@@ -57,6 +58,7 @@ class MessageLabels(
     val audio: String,
     val gif: String,
     val file: String,
+    val deleted: String,
 )
 
 data class ContactRecord(
@@ -107,6 +109,7 @@ fun formatMessage(
     3 -> formatted(MessageKind.VIDEO, labels.video)
     4 -> formatted(MessageKind.STICKER, labels.sticker)
     5 -> formatted(MessageKind.LOCATION, labels.location)
+    8 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
     9 -> formatLink(body, info, labels)
     10 -> formatted(MessageKind.CONTACT, labels.contact)
     11 -> formatFile(info, labels)
@@ -114,6 +117,7 @@ fun formatMessage(
         val text = body.clean() ?: extractJsonString(info, "text").clean()
         formatted(MessageKind.PINNED, text?.let(labels.pinned) ?: labels.pinnedEmpty)
     }
+    72 -> formatted(MessageKind.DELETED, labels.deleted)
     else -> formatted(MessageKind.UNKNOWN, labels.unknownType(type))
 }
 

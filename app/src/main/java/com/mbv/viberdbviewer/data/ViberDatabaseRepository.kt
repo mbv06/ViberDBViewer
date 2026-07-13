@@ -44,6 +44,7 @@ class ViberDatabaseRepository(context: Context) : Closeable {
         audio = text(R.string.message_audio),
         gif = text(R.string.message_gif),
         file = text(R.string.message_file),
+        deleted = text(R.string.message_deleted),
     )
 
     fun userMessage(error: Exception): String = when (error) {
@@ -95,6 +96,7 @@ class ViberDatabaseRepository(context: Context) : Closeable {
             SELECT ci.ChatID, ci.Name, COUNT(e.EventID), MAX(e.TimeStamp)
             FROM ChatInfo ci
             INNER JOIN Events e ON e.ChatID = ci.ChatID
+            INNER JOIN Messages m ON m.EventID = e.EventID AND m.Type <> 0
             GROUP BY ci.ChatID, ci.Name
             ORDER BY MAX(e.TimeStamp) DESC, ci.ChatID DESC
             """.trimIndent(),
@@ -148,7 +150,7 @@ class ViberDatabaseRepository(context: Context) : Closeable {
             FROM Events e
             INNER JOIN Messages m ON m.EventID = e.EventID
             LEFT JOIN Contact c ON c.ContactID = e.ContactID
-            WHERE e.ChatID = ?
+            WHERE e.ChatID = ? AND m.Type <> 0
             ORDER BY e.TimeStamp ASC, e.SortOrder ASC, e.EventID ASC
             """.trimIndent(),
             arrayOf(chatId.toString()),
