@@ -2,7 +2,14 @@
 
 This document records behavior verified against Viber databases used by this project. Treat numeric enums as observations rather than a stable public Viber API, and update this file whenever another database version reveals different behavior.
 
-## Core relationships
+## Supported database families
+
+The viewer detects the format from required tables and columns, not from the file name or number of tables:
+
+- Desktop `viber.db`: `ChatInfo`, `ChatRelation`, `Contact`, `Events`, and `Messages`.
+- Android `viber_messages`: `conversations`, `participants`, `participants_info`, and `messages`.
+
+## Desktop relationships
 
 - ChatInfo.ChatID identifies a conversation.
 - ChatRelation connects conversations to Contact rows.
@@ -30,6 +37,37 @@ This document records behavior verified against Viber databases used by this pro
 | 72 | Deleted message | Display a localized “Deleted message” notice using subdued, small italic text. |
 | other | Unknown | Display the numeric type in a generic placeholder so new values remain visible. |
 
+## Android relationships
+
+- `conversations._id` identifies a conversation; `messages.conversation_id` links messages to it.
+- `messages.participant_id` links to `participants._id`, then `participants.participant_info_id` links to `participants_info._id`.
+- Contact names use `contact_name`, then `display_name`, then `viber_name`, then `number`.
+- `conversations.participant_id_1` identifies the other contact in a direct conversation.
+- `messages.msg_date` is a Unix timestamp in milliseconds.
+- `messages.send_type = 1` is outgoing; every other value is incoming.
+- Rows with `messages.deleted = 1` are excluded from chat summaries, conversations, and search.
+- Conversation types `1` and `5` are treated as group/community conversations; type `6` is a self-chat.
+
+### Observed Android messages.extra_mime values
+
+| extra_mime | Meaning | Viewer behavior |
+| ---: | --- | --- |
+| 0 | Text | Display `body`. Unlike desktop `Messages.Type = 0`, this is not a reaction row. |
+| 1 | Image | Display an image placeholder. |
+| 3 | Video | Display a video placeholder. |
+| 4 | Sticker | Display a sticker placeholder. |
+| 5 | Location | Display a location placeholder. |
+| 7 | Business rich message | Extract the first visible `Text` value from the JSON array in `body`. |
+| 8 | Rich link | Display `body` or visible `Text`/`Title` and `URL` from `msg_info`. |
+| 9 | Contact card | Display a contact placeholder. |
+| 10 | File | Display a file placeholder. |
+| 1005 | GIF | Display a GIF placeholder. |
+| 1007 | Like/reaction helper event | Filter out from chat aggregation, conversations, and search. |
+| 1008 | Deleted message | Display a localized “Deleted message” notice like desktop type `72`. |
+| 1009 | Voice message | Display an audio placeholder. |
+| 1010 | Instant video message | Display a video placeholder. |
+| other | Unknown | Display the numeric `extra_mime` value in a generic placeholder. |
+
 ## Global message search
 
 - Global search scans only messages that can produce visible text, formats them with the same rules as the conversation view, and compares text case-insensitively in Kotlin so non-ASCII scripts work correctly.
@@ -39,7 +77,8 @@ This document records behavior verified against Viber databases used by this pro
 
 ## Query invariants
 
-- Conversation messages are ordered by Events.TimeStamp, then SortOrder, then EventID.
+- Desktop messages are ordered by `Events.TimeStamp`, then `SortOrder`, then `EventID`.
+- Android messages are ordered by `messages.msg_date`, then `order_key`, then `_id`.
 - Empty chats and chats containing only type 0 events are hidden.
 - Media payload and thumbnail paths are never opened by the viewer.
 - The imported database is copied into private app storage and opened read-only.

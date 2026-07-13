@@ -11,7 +11,7 @@
     <string name="database_error_title">Database error</string>
     <string name="loading_saved_database">Checking the saved database…</string>
     <string name="importing_database">Copying and checking the database…</string>
-    <string name="database_picker_description">Select a viber.db file. The app will save a private copy and will not modify the original.</string>
+    <string name="database_picker_description">Select a desktop viber.db or Android viber_messages database. The app will save a private copy and will not modify the original.</string>
     <string name="chats_title">Chats</string>
     <string name="chat_search_label">Name or phone number</string>
     <string name="no_chats">This database has no chats with messages</string>
@@ -59,6 +59,7 @@
     <string name="error_corrupt_or_encrypted">The database is corrupted or encrypted</string>
     <string name="error_integrity_check">The database integrity check failed</string>
     <string name="error_unsupported_schema">Unsupported Viber database schema: %1$s%2$s</string>
+    <string name="error_unsupported_database_format">Unsupported Viber database schema. Select a desktop viber.db or Android viber_messages database.</string>
     <string name="error_check_schema">Could not verify the database structure</string>
     <string name="error_database_not_open">The database is not open</string>
 </resources>

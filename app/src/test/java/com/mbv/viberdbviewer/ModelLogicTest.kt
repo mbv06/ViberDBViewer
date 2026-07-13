@@ -7,6 +7,7 @@ import com.mbv.viberdbviewer.model.MessageKind
 import com.mbv.viberdbviewer.model.MessageLabels
 import com.mbv.viberdbviewer.model.filterChats
 import com.mbv.viberdbviewer.model.findMessageMatches
+import com.mbv.viberdbviewer.model.formatAndroidMessage
 import com.mbv.viberdbviewer.model.formatMessage
 import com.mbv.viberdbviewer.model.normalizePhone
 import org.junit.Assert.assertEquals
@@ -18,6 +19,10 @@ class ModelLogicTest {
         assertEquals("Name", ContactRecord(1, " Name ", "Viber", "+380").displayName("fallback"))
         assertEquals("Viber", ContactRecord(1, "", "Viber", "+380").displayName("fallback"))
         assertEquals("+380", ContactRecord(1, null, null, "+380").displayName("fallback"))
+        assertEquals(
+            "Viber name",
+            ContactRecord(1, null, null, "+380", "Viber name").displayName("fallback"),
+        )
         assertEquals("fallback", ContactRecord(1, null, null, null).displayName("fallback"))
     }
 
@@ -72,6 +77,45 @@ class ModelLogicTest {
     }
 
     @Test
+    fun androidMessageFormatterMapsObservedExtraMimeValues() {
+        val labels = labels()
+
+        assertEquals("Hello", formatAndroidMessage(0, "Hello", null, labels).displayText)
+        assertEquals(MessageKind.IMAGE, formatAndroidMessage(1, null, null, labels).kind)
+        assertEquals(MessageKind.VIDEO, formatAndroidMessage(3, null, null, labels).kind)
+        assertEquals(MessageKind.STICKER, formatAndroidMessage(4, null, null, labels).kind)
+        assertEquals(MessageKind.LOCATION, formatAndroidMessage(5, null, null, labels).kind)
+        assertEquals(
+            "Business notice",
+            formatAndroidMessage(
+                7,
+                "[{\"Type\":\"txt\",\"Text\":\"Business notice\",\"TextSpans\":\"_\"}]",
+                null,
+                labels,
+            ).displayText,
+        )
+        assertEquals(
+            "Preview\nhttps://example.com",
+            formatAndroidMessage(
+                8,
+                null,
+                "{\"Text\":\"Preview\",\"URL\":\"https://example.com\"}",
+                labels,
+            ).displayText,
+        )
+        assertEquals(MessageKind.CONTACT, formatAndroidMessage(9, null, null, labels).kind)
+        assertEquals(MessageKind.FILE, formatAndroidMessage(10, null, null, labels).kind)
+        assertEquals(MessageKind.GIF, formatAndroidMessage(1005, null, null, labels).kind)
+        assertEquals(
+            MessageKind.DELETED,
+            formatAndroidMessage(1008, "message_deleted/id", null, labels).kind,
+        )
+        assertEquals(MessageKind.AUDIO, formatAndroidMessage(1009, null, null, labels).kind)
+        assertEquals(MessageKind.VIDEO, formatAndroidMessage(1010, null, null, labels).kind)
+        assertEquals(MessageKind.UNKNOWN, formatAndroidMessage(777, null, null, labels).kind)
+    }
+
+    @Test
     fun messageSearchReturnsIndicesWithoutFilteringMessages() {
         val messages = listOf(
             message(1, "First"),
@@ -100,5 +144,22 @@ class ModelLogicTest {
         kind = MessageKind.TEXT,
         displayText = text,
         searchableText = text,
+    )
+
+    private fun labels() = MessageLabels(
+        empty = "<empty message>",
+        image = "<image>",
+        video = "<video>",
+        sticker = "<sticker>",
+        location = "<location>",
+        contact = "<contact>",
+        pinned = { "Pinned: $it" },
+        pinnedEmpty = "<pinned message>",
+        unknownType = { "<message type $it>" },
+        link = "<link>",
+        audio = "<audio>",
+        gif = "<GIF>",
+        file = "<file>",
+        deleted = "Deleted message",
     )
 }

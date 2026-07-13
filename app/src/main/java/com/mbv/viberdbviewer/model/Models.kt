@@ -75,10 +75,12 @@ data class ContactRecord(
     val name: String?,
     val clientName: String?,
     val number: String?,
+    val viberName: String? = null,
 ) {
     fun displayName(fallback: String): String =
         name.clean().orEmpty()
             .ifEmpty { clientName.clean().orEmpty() }
+            .ifEmpty { viberName.clean().orEmpty() }
             .ifEmpty { number.clean().orEmpty() }
             .ifEmpty { fallback }
 }
@@ -130,10 +132,37 @@ fun formatMessage(
     else -> formatted(MessageKind.UNKNOWN, labels.unknownType(type))
 }
 
+fun formatAndroidMessage(
+    extraMime: Int,
+    body: String?,
+    info: String?,
+    labels: MessageLabels,
+): FormattedMessage = when (extraMime) {
+    0 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
+    1 -> formatted(MessageKind.IMAGE, labels.image)
+    3 -> formatted(MessageKind.VIDEO, labels.video)
+    4 -> formatted(MessageKind.STICKER, labels.sticker)
+    5 -> formatted(MessageKind.LOCATION, labels.location)
+    7 -> formatted(
+        MessageKind.TEXT,
+        extractJsonString(body, "Text").clean() ?: labels.empty,
+    )
+    8 -> formatLink(body, info, labels)
+    9 -> formatted(MessageKind.CONTACT, labels.contact)
+    10 -> formatted(MessageKind.FILE, labels.file)
+    1005 -> formatted(MessageKind.GIF, labels.gif)
+    1008 -> formatted(MessageKind.DELETED, labels.deleted)
+    1009 -> formatted(MessageKind.AUDIO, labels.audio)
+    1010 -> formatted(MessageKind.VIDEO, labels.video)
+    else -> formatted(MessageKind.UNKNOWN, labels.unknownType(extraMime))
+}
+
 private fun formatted(kind: MessageKind, text: String) = FormattedMessage(kind, text, text)
 
 private fun formatLink(body: String?, info: String?, labels: MessageLabels): FormattedMessage {
-    val text = body.clean() ?: extractJsonString(info, "Text").clean()
+    val text = body.clean()
+        ?: extractJsonString(info, "Text").clean()
+        ?: extractJsonString(info, "Title").clean()
     val url = extractJsonString(info, "URL").clean()
     val visible = when {
         text != null && url != null && !text.contains(url, ignoreCase = true) -> "$text\n$url"

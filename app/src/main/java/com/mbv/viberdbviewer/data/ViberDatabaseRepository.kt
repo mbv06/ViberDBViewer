@@ -22,6 +22,11 @@ import java.io.FileOutputStream
 
 class DatabaseImportException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+private enum class ViberDatabaseFormat {
+    DESKTOP,
+    ANDROID,
+}
+
 class ViberDatabaseRepository(context: Context) : Closeable {
     private val appContext = context.applicationContext
     private val databaseDir = File(appContext.filesDir, "viber_viewer")
@@ -31,6 +36,9 @@ class ViberDatabaseRepository(context: Context) : Closeable {
 
     @Volatile
     private var database: SQLiteDatabase? = null
+
+    @Volatile
+    private var databaseFormat: ViberDatabaseFormat? = null
 
     private val messageLabels = MessageLabels(
         empty = text(R.string.message_empty),
@@ -49,6 +57,8 @@ class ViberDatabaseRepository(context: Context) : Closeable {
         deleted = text(R.string.message_deleted),
     )
 
+    private val androidReader = AndroidViberDatabaseReader(appContext, messageLabels)
+
     fun userMessage(error: Exception): String = when (error) {
         is DatabaseImportException -> error.message ?: text(R.string.database_error_title)
         else -> text(R.string.error_unexpected, error.message ?: text(R.string.error_unknown_reason))
@@ -56,8 +66,8 @@ class ViberDatabaseRepository(context: Context) : Closeable {
 
     suspend fun openExisting(): Boolean = withContext(Dispatchers.IO) {
         if (!activeFile.isFile) return@withContext false
-        validateDatabase(activeFile).close()
-        replaceOpenDatabase(openReadOnly(activeFile))
+        val format = validateDatabase(activeFile)
+        replaceOpenDatabase(openReadOnly(activeFile), format)
         true
     }
 
@@ -72,8 +82,8 @@ class ViberDatabaseRepository(context: Context) : Closeable {
                 }
             } ?: throw DatabaseImportException(text(R.string.error_open_selected_file))
 
-            validateDatabase(candidateFile).close()
-            installCandidate()
+            val format = validateDatabase(candidateFile)
+            installCandidate(format)
         } catch (error: DatabaseImportException) {
             candidateFile.delete()
             throw error
@@ -88,6 +98,9 @@ class ViberDatabaseRepository(context: Context) : Closeable {
 
     suspend fun loadChats(): List<ChatSummary> = withContext(Dispatchers.IO) {
         val db = requireDatabase()
+        if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
+            return@withContext androidReader.loadChats(db)
+        }
         val selfId = findSelfContactId(db)
         val contacts = loadContacts(db)
         val relations = loadRelations(db)
@@ -143,6 +156,9 @@ class ViberDatabaseRepository(context: Context) : Closeable {
 
     suspend fun loadMessages(chatId: Long): List<ChatMessage> = withContext(Dispatchers.IO) {
         val db = requireDatabase()
+        if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
+            return@withContext androidReader.loadMessages(db, chatId)
+        }
         val messages = ArrayList<ChatMessage>()
         db.rawQuery(
             """
@@ -193,6 +209,9 @@ class ViberDatabaseRepository(context: Context) : Closeable {
 
             val db = requireDatabase()
             val resultLimit = limit.coerceIn(1, 1000)
+            if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
+                return@withContext androidReader.searchMessages(db, needle, resultLimit)
+            }
             val results = ArrayList<GlobalSearchResult>(minOf(resultLimit, 200))
             db.rawQuery(
                 """
@@ -237,7 +256,8 @@ class ViberDatabaseRepository(context: Context) : Closeable {
             results
         }
 
-    private fun installCandidate() {
+    private fun installCandidate(format: ViberDatabaseFormat) {
+        val previousFormat = databaseFormat
         closeDatabase()
         backupFile.delete()
         val hadActive = activeFile.isFile
@@ -249,18 +269,23 @@ class ViberDatabaseRepository(context: Context) : Closeable {
             throw DatabaseImportException(text(R.string.error_save_database))
         }
         try {
-            replaceOpenDatabase(openReadOnly(activeFile))
+            replaceOpenDatabase(openReadOnly(activeFile), format)
             backupFile.delete()
         } catch (error: Exception) {
             closeDatabase()
             activeFile.delete()
             if (hadActive) backupFile.renameTo(activeFile)
-            if (activeFile.isFile) runCatching { replaceOpenDatabase(openReadOnly(activeFile)) }
+            if (activeFile.isFile) {
+                runCatching {
+                    val restoredFormat = previousFormat ?: validateDatabase(activeFile)
+                    replaceOpenDatabase(openReadOnly(activeFile), restoredFormat)
+                }
+            }
             throw DatabaseImportException(text(R.string.error_open_imported_database), error)
         }
     }
 
-    private fun validateDatabase(file: File): SQLiteDatabase {
+    private fun validateDatabase(file: File): ViberDatabaseFormat {
         if (!hasSqliteHeader(file)) throw DatabaseImportException(text(R.string.error_not_sqlite))
         val db = try {
             openReadOnly(file)
@@ -273,27 +298,34 @@ class ViberDatabaseRepository(context: Context) : Closeable {
                     throw DatabaseImportException(text(R.string.error_integrity_check))
                 }
             }
-            REQUIRED_SCHEMA.forEach { (table, columns) ->
-                val actual = mutableSetOf<String>()
-                db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
-                    while (cursor.moveToNext()) actual += cursor.getString(1)
-                }
-                val missing = columns - actual
-                if (actual.isEmpty() || missing.isNotEmpty()) {
-                    val missingColumns = if (missing.isEmpty()) {
-                        ""
-                    } else {
-                        " (${missing.joinToString()})"
-                    }
-                    throw DatabaseImportException(text(R.string.error_unsupported_schema, table, missingColumns))
-                }
-            }
-            return db
+            return detectDatabaseFormat(db)
         } catch (error: Exception) {
-            db.close()
             if (error is DatabaseImportException) throw error
             throw DatabaseImportException(text(R.string.error_check_schema), error)
+        } finally {
+            db.close()
         }
+    }
+
+    private fun detectDatabaseFormat(db: SQLiteDatabase): ViberDatabaseFormat {
+        REQUIRED_SCHEMAS.forEach { (format, schema) ->
+            if (schema.all { (table, columns) -> hasRequiredSchema(db, table, columns) }) {
+                return format
+            }
+        }
+        throw DatabaseImportException(text(R.string.error_unsupported_database_format))
+    }
+
+    private fun hasRequiredSchema(
+        db: SQLiteDatabase,
+        table: String,
+        requiredColumns: Set<String>,
+    ): Boolean {
+        val actualColumns = mutableSetOf<String>()
+        db.rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+            while (cursor.moveToNext()) actualColumns += cursor.getString(1).lowercase()
+        }
+        return actualColumns.isNotEmpty() && actualColumns.containsAll(requiredColumns)
     }
 
     private fun hasSqliteHeader(file: File): Boolean {
@@ -361,16 +393,24 @@ class ViberDatabaseRepository(context: Context) : Closeable {
         database?.takeIf { it.isOpen }
             ?: throw DatabaseImportException(text(R.string.error_database_not_open))
 
+    private fun requireDatabaseFormat(): ViberDatabaseFormat =
+        databaseFormat ?: throw DatabaseImportException(text(R.string.error_database_not_open))
+
     @Synchronized
-    private fun replaceOpenDatabase(newDatabase: SQLiteDatabase) {
+    private fun replaceOpenDatabase(
+        newDatabase: SQLiteDatabase,
+        newFormat: ViberDatabaseFormat,
+    ) {
         closeDatabase()
         database = newDatabase
+        databaseFormat = newFormat
     }
 
     @Synchronized
     private fun closeDatabase() {
         database?.close()
         database = null
+        databaseFormat = null
     }
 
     override fun close() = closeDatabase()
@@ -381,12 +421,41 @@ class ViberDatabaseRepository(context: Context) : Closeable {
     companion object {
         private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 
-        private val REQUIRED_SCHEMA = mapOf(
-            "ChatInfo" to setOf("ChatID", "Name"),
-            "ChatRelation" to setOf("ChatID", "ContactID"),
-            "Contact" to setOf("ContactID", "Name", "ClientName", "Number"),
-            "Events" to setOf("EventID", "TimeStamp", "Direction", "ChatID", "ContactID", "SortOrder"),
-            "Messages" to setOf("EventID", "Type", "Body", "Info"),
+        private val DESKTOP_REQUIRED_SCHEMA = mapOf(
+            "ChatInfo" to setOf("chatid", "name"),
+            "ChatRelation" to setOf("chatid", "contactid"),
+            "Contact" to setOf("contactid", "name", "clientname", "number"),
+            "Events" to setOf("eventid", "timestamp", "direction", "chatid", "contactid", "sortorder"),
+            "Messages" to setOf("eventid", "type", "body", "info"),
+        )
+
+        private val ANDROID_REQUIRED_SCHEMA = mapOf(
+            "conversations" to setOf("_id", "conversation_type", "name", "participant_id_1"),
+            "participants" to setOf("_id", "conversation_id", "participant_info_id", "active"),
+            "participants_info" to setOf(
+                "_id",
+                "number",
+                "contact_name",
+                "display_name",
+                "viber_name",
+            ),
+            "messages" to setOf(
+                "_id",
+                "conversation_id",
+                "participant_id",
+                "msg_date",
+                "send_type",
+                "body",
+                "order_key",
+                "deleted",
+                "extra_mime",
+                "msg_info",
+            ),
+        )
+
+        private val REQUIRED_SCHEMAS = linkedMapOf(
+            ViberDatabaseFormat.DESKTOP to DESKTOP_REQUIRED_SCHEMA,
+            ViberDatabaseFormat.ANDROID to ANDROID_REQUIRED_SCHEMA,
         )
     }
 }
