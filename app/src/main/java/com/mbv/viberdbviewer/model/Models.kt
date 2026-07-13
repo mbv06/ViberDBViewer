@@ -1,5 +1,8 @@
 package com.mbv.viberdbviewer.model
 
+import com.mbv.viberdbviewer.AndroidMessageType
+import com.mbv.viberdbviewer.DesktopMessageType
+import com.mbv.viberdbviewer.MessageDirection
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -23,7 +26,7 @@ data class ChatMessage(
     val displayText: String,
     val searchableText: String,
 ) {
-    val isOutgoing: Boolean get() = direction == 1
+    val isOutgoing: Boolean get() = direction == MessageDirection.OUTGOING
 }
 
 data class GlobalSearchResult(
@@ -141,20 +144,20 @@ fun formatMessage(
     labels: MessageLabels,
 ): FormattedMessage =
     when (type) {
-        1 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
-        2 -> formatted(MessageKind.IMAGE, labels.image)
-        3 -> formatted(MessageKind.VIDEO, labels.video)
-        4 -> formatted(MessageKind.STICKER, labels.sticker)
-        5 -> formatted(MessageKind.LOCATION, labels.location)
-        8 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
-        9 -> formatLink(body, info, labels)
-        10 -> formatted(MessageKind.CONTACT, labels.contact)
-        11 -> formatFile(info, labels)
-        15 -> {
+        DesktopMessageType.TEXT -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
+        DesktopMessageType.IMAGE -> formatted(MessageKind.IMAGE, labels.image)
+        DesktopMessageType.VIDEO -> formatted(MessageKind.VIDEO, labels.video)
+        DesktopMessageType.STICKER -> formatted(MessageKind.STICKER, labels.sticker)
+        DesktopMessageType.LOCATION -> formatted(MessageKind.LOCATION, labels.location)
+        DesktopMessageType.BUSINESS -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
+        DesktopMessageType.LINK -> formatLink(body, info, labels)
+        DesktopMessageType.CONTACT -> formatted(MessageKind.CONTACT, labels.contact)
+        DesktopMessageType.FILE -> formatFile(info, labels)
+        DesktopMessageType.PINNED -> {
             val text = body.clean() ?: extractJsonString(info, "text").clean()
             formatted(MessageKind.PINNED, text?.let(labels.pinned) ?: labels.pinnedEmpty)
         }
-        72 -> formatted(MessageKind.DELETED, labels.deleted)
+        DesktopMessageType.DELETED -> formatted(MessageKind.DELETED, labels.deleted)
         else -> formatted(MessageKind.UNKNOWN, labels.unknownType(type))
     }
 
@@ -165,23 +168,23 @@ fun formatAndroidMessage(
     labels: MessageLabels,
 ): FormattedMessage =
     when (extraMime) {
-        0 -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
-        1 -> formatted(MessageKind.IMAGE, labels.image)
-        3 -> formatted(MessageKind.VIDEO, labels.video)
-        4 -> formatted(MessageKind.STICKER, labels.sticker)
-        5 -> formatted(MessageKind.LOCATION, labels.location)
-        7 ->
+        AndroidMessageType.TEXT -> formatted(MessageKind.TEXT, body.clean() ?: labels.empty)
+        AndroidMessageType.IMAGE -> formatted(MessageKind.IMAGE, labels.image)
+        AndroidMessageType.VIDEO -> formatted(MessageKind.VIDEO, labels.video)
+        AndroidMessageType.STICKER -> formatted(MessageKind.STICKER, labels.sticker)
+        AndroidMessageType.LOCATION -> formatted(MessageKind.LOCATION, labels.location)
+        AndroidMessageType.BUSINESS ->
             formatted(
                 MessageKind.TEXT,
                 extractJsonString(body, "Text").clean() ?: labels.empty,
             )
-        8 -> formatLink(body, info, labels)
-        9 -> formatted(MessageKind.CONTACT, labels.contact)
-        10 -> formatted(MessageKind.FILE, labels.file)
-        1005 -> formatted(MessageKind.GIF, labels.gif)
-        1008 -> formatted(MessageKind.DELETED, labels.deleted)
-        1009 -> formatted(MessageKind.AUDIO, labels.audio)
-        1010 -> formatted(MessageKind.VIDEO, labels.video)
+        AndroidMessageType.LINK -> formatLink(body, info, labels)
+        AndroidMessageType.CONTACT -> formatted(MessageKind.CONTACT, labels.contact)
+        AndroidMessageType.FILE -> formatted(MessageKind.FILE, labels.file)
+        AndroidMessageType.GIF -> formatted(MessageKind.GIF, labels.gif)
+        AndroidMessageType.DELETED -> formatted(MessageKind.DELETED, labels.deleted)
+        AndroidMessageType.AUDIO -> formatted(MessageKind.AUDIO, labels.audio)
+        AndroidMessageType.INSTANT_VIDEO -> formatted(MessageKind.VIDEO, labels.video)
         else -> formatted(MessageKind.UNKNOWN, labels.unknownType(extraMime))
     }
 

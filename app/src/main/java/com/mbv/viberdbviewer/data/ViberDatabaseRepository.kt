@@ -4,6 +4,10 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
+import com.mbv.viberdbviewer.DesktopClientFlag
+import com.mbv.viberdbviewer.DesktopContact
+import com.mbv.viberdbviewer.DesktopMessageType
+import com.mbv.viberdbviewer.MessageDirection
 import com.mbv.viberdbviewer.R
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
@@ -105,6 +109,7 @@ class ViberDatabaseRepository(
             }
         }
 
+    @Suppress("LongMethod")
     suspend fun loadChats(): List<ChatSummary> =
         withContext(Dispatchers.IO) {
             val db = requireDatabase()
@@ -124,8 +129,8 @@ class ViberDatabaseRepository(
                     INNER JOIN Events e ON e.ChatID = ci.ChatID
                     INNER JOIN Messages m
                         ON m.EventID = e.EventID
-                        AND m.Type <> 0
-                        AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
+                        AND m.Type <> ${DesktopMessageType.HEART_REACTION}
+                        AND COALESCE(m.ClientFlag, ${DesktopClientFlag.NONE}) NOT IN (${DesktopClientFlag.EDIT_HISTORY}, ${DesktopClientFlag.EDIT_HISTORY_VARIANT})
                     GROUP BY ci.ChatID, ci.Name
                     ORDER BY MAX(e.TimeStamp) DESC, ci.ChatID DESC
                     """.trimIndent(),
@@ -183,14 +188,14 @@ class ViberDatabaseRepository(
                 .rawQuery(
                     """
                     SELECT e.EventID, e.TimeStamp, e.Direction, e.ContactID, m.Type, m.Body,
-                           CASE WHEN m.Type IN (9, 11, 15) THEN m.Info ELSE NULL END,
+                           CASE WHEN m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.FILE}, ${DesktopMessageType.PINNED}) THEN m.Info ELSE NULL END,
                            c.Name, c.ClientName, c.Number
                     FROM Events e
                     INNER JOIN Messages m ON m.EventID = e.EventID
                     LEFT JOIN Contact c ON c.ContactID = e.ContactID
                     WHERE e.ChatID = ?
-                      AND m.Type <> 0
-                      AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
+                      AND m.Type <> ${DesktopMessageType.HEART_REACTION}
+                      AND COALESCE(m.ClientFlag, ${DesktopClientFlag.NONE}) NOT IN (${DesktopClientFlag.EDIT_HISTORY}, ${DesktopClientFlag.EDIT_HISTORY_VARIANT})
                     ORDER BY e.TimeStamp ASC, e.SortOrder ASC, e.EventID ASC
                     """.trimIndent(),
                     arrayOf(chatId.toString()),
@@ -245,14 +250,14 @@ class ViberDatabaseRepository(
                 .rawQuery(
                     """
                     SELECT e.EventID, e.ChatID, e.TimeStamp, e.ContactID, m.Type, m.Body,
-                           CASE WHEN m.Type IN (9, 15) THEN m.Info ELSE NULL END,
+                           CASE WHEN m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.PINNED}) THEN m.Info ELSE NULL END,
                            c.Name, c.ClientName, c.Number
                     FROM Events e
                     INNER JOIN Messages m ON m.EventID = e.EventID
                     LEFT JOIN Contact c ON c.ContactID = e.ContactID
-                    WHERE m.Type <> 0
-                      AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
-                      AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (9, 15, 72))
+                    WHERE m.Type <> ${DesktopMessageType.HEART_REACTION}
+                      AND COALESCE(m.ClientFlag, ${DesktopClientFlag.NONE}) NOT IN (${DesktopClientFlag.EDIT_HISTORY}, ${DesktopClientFlag.EDIT_HISTORY_VARIANT})
+                      AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.PINNED}, ${DesktopMessageType.DELETED}))
                     ORDER BY e.TimeStamp DESC, e.SortOrder DESC, e.EventID DESC
                     """.trimIndent(),
                     null,
@@ -382,7 +387,7 @@ class ViberDatabaseRepository(
                 """
                 SELECT ContactID
                 FROM Events
-                WHERE Direction = 1 AND ContactID IS NOT NULL
+                WHERE Direction = ${MessageDirection.OUTGOING} AND ContactID IS NOT NULL
                 GROUP BY ContactID
                 ORDER BY COUNT(*) DESC
                 LIMIT 1
@@ -391,9 +396,13 @@ class ViberDatabaseRepository(
             ).use { cursor ->
                 if (cursor.moveToFirst()) return cursor.getLong(0)
             }
-        db.rawQuery("SELECT ContactID FROM Contact WHERE ContactID = 1", null).use { cursor ->
-            return if (cursor.moveToFirst()) cursor.getLong(0) else null
-        }
+        db
+            .rawQuery(
+                "SELECT ContactID FROM Contact WHERE ContactID = ${DesktopContact.DEFAULT_SELF_ID}",
+                null,
+            ).use { cursor ->
+                return if (cursor.moveToFirst()) cursor.getLong(0) else null
+            }
     }
 
     private fun loadContacts(db: SQLiteDatabase): Map<Long, ContactRecord> {

@@ -61,22 +61,33 @@ class ModelLogicTest {
                 deleted = "Deleted message",
             )
 
-        assertEquals(MessageKind.TEXT, formatMessage(1, "Hello", null, labels).kind)
-        assertEquals("Business notice", formatMessage(8, "Business notice", null, labels).displayText)
-        assertEquals(MessageKind.DELETED, formatMessage(72, "ignored", null, labels).kind)
-        assertEquals("Deleted message", formatMessage(72, "ignored", null, labels).displayText)
-        assertEquals("<image>", formatMessage(2, null, null, labels).displayText)
-        assertEquals("<video>", formatMessage(3, null, null, labels).displayText)
+        assertEquals(MessageKind.TEXT, formatMessage(DesktopMessageType.TEXT, "Hello", null, labels).kind)
+        assertEquals(
+            "Business notice",
+            formatMessage(DesktopMessageType.BUSINESS, "Business notice", null, labels).displayText,
+        )
+        assertEquals(MessageKind.DELETED, formatMessage(DesktopMessageType.DELETED, "ignored", null, labels).kind)
+        assertEquals("Deleted message", formatMessage(DesktopMessageType.DELETED, "ignored", null, labels).displayText)
+        assertEquals("<image>", formatMessage(DesktopMessageType.IMAGE, null, null, labels).displayText)
+        assertEquals("<video>", formatMessage(DesktopMessageType.VIDEO, null, null, labels).displayText)
         assertEquals(
             "Title\nhttps://example.com/a/b",
-            formatMessage(9, "Title", "{\"URL\":\"https:\\/\\/example.com\\/a\\/b\"}", labels).displayText,
+            formatMessage(
+                DesktopMessageType.LINK,
+                "Title",
+                "{\"URL\":\"https:\\/\\/example.com\\/a\\/b\"}",
+                labels,
+            ).displayText,
         )
-        assertEquals(MessageKind.AUDIO, formatMessage(11, null, "{\"audio_ptt\":{}}", labels).kind)
-        assertEquals(MessageKind.GIF, formatMessage(11, null, "{\"MediaType\": \"GIF\"}", labels).kind)
-        assertEquals(MessageKind.FILE, formatMessage(11, null, "{}", labels).kind)
+        assertEquals(MessageKind.AUDIO, formatMessage(DesktopMessageType.FILE, null, "{\"audio_ptt\":{}}", labels).kind)
+        assertEquals(
+            MessageKind.GIF,
+            formatMessage(DesktopMessageType.FILE, null, "{\"MediaType\": \"GIF\"}", labels).kind,
+        )
+        assertEquals(MessageKind.FILE, formatMessage(DesktopMessageType.FILE, null, "{}", labels).kind)
         assertEquals(
             "Pinned: Important",
-            formatMessage(15, null, "{\"pin\":{\"text\":\"Important\"}}", labels).displayText,
+            formatMessage(DesktopMessageType.PINNED, null, "{\"pin\":{\"text\":\"Important\"}}", labels).displayText,
         )
     }
 
@@ -84,15 +95,15 @@ class ModelLogicTest {
     fun androidMessageFormatterMapsObservedExtraMimeValues() {
         val labels = labels()
 
-        assertEquals("Hello", formatAndroidMessage(0, "Hello", null, labels).displayText)
-        assertEquals(MessageKind.IMAGE, formatAndroidMessage(1, null, null, labels).kind)
-        assertEquals(MessageKind.VIDEO, formatAndroidMessage(3, null, null, labels).kind)
-        assertEquals(MessageKind.STICKER, formatAndroidMessage(4, null, null, labels).kind)
-        assertEquals(MessageKind.LOCATION, formatAndroidMessage(5, null, null, labels).kind)
+        assertEquals("Hello", formatAndroidMessage(AndroidMessageType.TEXT, "Hello", null, labels).displayText)
+        assertEquals(MessageKind.IMAGE, formatAndroidMessage(AndroidMessageType.IMAGE, null, null, labels).kind)
+        assertEquals(MessageKind.VIDEO, formatAndroidMessage(AndroidMessageType.VIDEO, null, null, labels).kind)
+        assertEquals(MessageKind.STICKER, formatAndroidMessage(AndroidMessageType.STICKER, null, null, labels).kind)
+        assertEquals(MessageKind.LOCATION, formatAndroidMessage(AndroidMessageType.LOCATION, null, null, labels).kind)
         assertEquals(
             "Business notice",
             formatAndroidMessage(
-                7,
+                AndroidMessageType.BUSINESS,
                 "[{\"Type\":\"txt\",\"Text\":\"Business notice\",\"TextSpans\":\"_\"}]",
                 null,
                 labels,
@@ -101,21 +112,21 @@ class ModelLogicTest {
         assertEquals(
             "Preview\nhttps://example.com",
             formatAndroidMessage(
-                8,
+                AndroidMessageType.LINK,
                 null,
                 "{\"Text\":\"Preview\",\"URL\":\"https://example.com\"}",
                 labels,
             ).displayText,
         )
-        assertEquals(MessageKind.CONTACT, formatAndroidMessage(9, null, null, labels).kind)
-        assertEquals(MessageKind.FILE, formatAndroidMessage(10, null, null, labels).kind)
-        assertEquals(MessageKind.GIF, formatAndroidMessage(1005, null, null, labels).kind)
+        assertEquals(MessageKind.CONTACT, formatAndroidMessage(AndroidMessageType.CONTACT, null, null, labels).kind)
+        assertEquals(MessageKind.FILE, formatAndroidMessage(AndroidMessageType.FILE, null, null, labels).kind)
+        assertEquals(MessageKind.GIF, formatAndroidMessage(AndroidMessageType.GIF, null, null, labels).kind)
         assertEquals(
             MessageKind.DELETED,
-            formatAndroidMessage(1008, "message_deleted/id", null, labels).kind,
+            formatAndroidMessage(AndroidMessageType.DELETED, "message_deleted/id", null, labels).kind,
         )
-        assertEquals(MessageKind.AUDIO, formatAndroidMessage(1009, null, null, labels).kind)
-        assertEquals(MessageKind.VIDEO, formatAndroidMessage(1010, null, null, labels).kind)
+        assertEquals(MessageKind.AUDIO, formatAndroidMessage(AndroidMessageType.AUDIO, null, null, labels).kind)
+        assertEquals(MessageKind.VIDEO, formatAndroidMessage(AndroidMessageType.INSTANT_VIDEO, null, null, labels).kind)
         assertEquals(MessageKind.UNKNOWN, formatAndroidMessage(777, null, null, labels).kind)
     }
 
@@ -178,7 +189,7 @@ class ModelLogicTest {
     ) = ChatMessage(
         eventId = id,
         timestamp = timestamp,
-        direction = 0,
+        direction = MessageDirection.INCOMING,
         senderName = "",
         kind = MessageKind.TEXT,
         displayText = text,

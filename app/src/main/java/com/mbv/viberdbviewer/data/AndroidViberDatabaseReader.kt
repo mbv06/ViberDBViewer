@@ -3,6 +3,11 @@ package com.mbv.viberdbviewer.data
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import com.mbv.viberdbviewer.AndroidConversationType
+import com.mbv.viberdbviewer.AndroidMessageState
+import com.mbv.viberdbviewer.AndroidMessageType
+import com.mbv.viberdbviewer.AndroidParticipantState
+import com.mbv.viberdbviewer.MessageDirection
 import com.mbv.viberdbviewer.R
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
@@ -27,11 +32,11 @@ internal class AndroidViberDatabaseReader(
                 SELECT c._id, c.name, c.conversation_type, MAX(m.msg_date),
                        pi._id, pi.contact_name, pi.display_name, pi.number, pi.viber_name,
                        (SELECT COUNT(*) FROM participants p
-                        WHERE p.conversation_id = c._id AND p.active = 1)
+                        WHERE p.conversation_id = c._id AND p.active = ${AndroidParticipantState.ACTIVE})
                 FROM conversations c
                 INNER JOIN messages m ON m.conversation_id = c._id
-                    AND m.deleted = 0
-                    AND m.extra_mime <> 1007
+                    AND m.deleted = ${AndroidMessageState.VISIBLE}
+                    AND m.extra_mime <> ${AndroidMessageType.REACTION}
                 LEFT JOIN participants_info pi ON pi._id = c.participant_id_1
                 GROUP BY c._id, c.name, c.conversation_type, c.participant_id_1
                 ORDER BY MAX(m.msg_date) DESC, c._id DESC
@@ -43,15 +48,15 @@ internal class AndroidViberDatabaseReader(
                     val chatName = cursor.stringOrNull(1).clean()
                     val conversationType = cursor.getInt(2)
                     val direct =
-                        if (conversationType == SELF_CONVERSATION_TYPE) {
+                        if (conversationType == AndroidConversationType.SELF) {
                             self
                         } else {
                             cursor.contact(4)
                         }
                     val activeParticipants = cursor.getInt(9)
                     val isGroup =
-                        conversationType in GROUP_CONVERSATION_TYPES ||
-                            (chatName != null && conversationType != SELF_CONVERSATION_TYPE)
+                        conversationType in AndroidConversationType.GROUP_TYPES ||
+                            (chatName != null && conversationType != AndroidConversationType.SELF)
                     val participantCount =
                         if (isGroup) {
                             activeParticipants + if (self != null) 1 else 0
@@ -100,14 +105,15 @@ internal class AndroidViberDatabaseReader(
         db
             .rawQuery(
                 """
-                SELECT m._id, m.msg_date, m.send_type, m.extra_mime, m.body, CASE WHEN m.extra_mime = 8 THEN m.msg_info ELSE NULL END,
+                SELECT m._id, m.msg_date, m.send_type, m.extra_mime, m.body,
+                       CASE WHEN m.extra_mime = ${AndroidMessageType.LINK} THEN m.msg_info ELSE NULL END,
                        pi._id, pi.contact_name, pi.display_name, pi.number, pi.viber_name
                 FROM messages m
                 LEFT JOIN participants p ON p._id = m.participant_id
                 LEFT JOIN participants_info pi ON pi._id = p.participant_info_id
                 WHERE m.conversation_id = ?
-                  AND m.deleted = 0
-                  AND m.extra_mime <> 1007
+                  AND m.deleted = ${AndroidMessageState.VISIBLE}
+                  AND m.extra_mime <> ${AndroidMessageType.REACTION}
                 ORDER BY m.msg_date ASC, m.order_key ASC, m._id ASC
                 """.trimIndent(),
                 arrayOf(chatId.toString()),
@@ -147,14 +153,23 @@ internal class AndroidViberDatabaseReader(
         db
             .rawQuery(
                 """
-                SELECT m._id, m.conversation_id, m.msg_date, m.extra_mime, m.body, CASE WHEN m.extra_mime = 8 THEN m.msg_info ELSE NULL END,
+                SELECT m._id, m.conversation_id, m.msg_date, m.extra_mime, m.body,
+                       CASE WHEN m.extra_mime = ${AndroidMessageType.LINK} THEN m.msg_info ELSE NULL END,
                        pi._id, pi.contact_name, pi.display_name, pi.number, pi.viber_name
                 FROM messages m
                 LEFT JOIN participants p ON p._id = m.participant_id
                 LEFT JOIN participants_info pi ON pi._id = p.participant_info_id
-                WHERE m.deleted = 0
-                  AND m.extra_mime IN (0, 7, 8, 1008)
-                  AND (TRIM(COALESCE(m.body, '')) <> '' OR m.extra_mime IN (8, 1008))
+                WHERE m.deleted = ${AndroidMessageState.VISIBLE}
+                  AND m.extra_mime IN (
+                      ${AndroidMessageType.TEXT},
+                      ${AndroidMessageType.BUSINESS},
+                      ${AndroidMessageType.LINK},
+                      ${AndroidMessageType.DELETED}
+                  )
+                  AND (
+                      TRIM(COALESCE(m.body, '')) <> ''
+                      OR m.extra_mime IN (${AndroidMessageType.LINK}, ${AndroidMessageType.DELETED})
+                  )
                 ORDER BY m.msg_date DESC, m.order_key DESC, m._id DESC
                 """.trimIndent(),
                 null,
@@ -195,7 +210,7 @@ internal class AndroidViberDatabaseReader(
                 FROM messages m
                 INNER JOIN participants p ON p._id = m.participant_id
                 INNER JOIN participants_info pi ON pi._id = p.participant_info_id
-                WHERE m.send_type = 1
+                WHERE m.send_type = ${MessageDirection.OUTGOING}
                 GROUP BY pi._id, pi.contact_name, pi.display_name, pi.number, pi.viber_name
                 ORDER BY COUNT(*) DESC
                 LIMIT 1
@@ -223,9 +238,4 @@ internal class AndroidViberDatabaseReader(
     ): String = context.getString(id, *args)
 
     private fun Cursor.stringOrNull(index: Int): String? = if (isNull(index)) null else getString(index)
-
-    private companion object {
-        const val SELF_CONVERSATION_TYPE = 6
-        val GROUP_CONVERSATION_TYPES = setOf(1, 5)
-    }
 }
