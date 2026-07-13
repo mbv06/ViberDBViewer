@@ -1,6 +1,8 @@
-# Viber database knowledge base
+# Viber database format notes
 
-This document records behavior verified against Viber databases used by this project. Treat numeric enums as observations rather than a stable public Viber API, and update this file whenever another database version reveals different behavior.
+This document describes the schema mappings and compatibility rules implemented by Viber DB Viewer. 
+Viber's SQLite formats are undocumented and may change between releases, so the identifiers and numeric values below describe observed database structures and should not be treated as a stable public API.
+
 
 ## Supported database families
 
@@ -19,7 +21,7 @@ The viewer detects the format from required tables and columns, not from the fil
 - Events.Direction = 1 is outgoing; 0 is incoming.
 - The contact most frequently referenced by outgoing events is treated as the local user.
 
-## Observed Messages.Type values
+## Known desktop message types
 
 | Type | Meaning | Viewer behavior |
 | ---: | --- | --- |
@@ -37,6 +39,13 @@ The viewer detects the format from required tables and columns, not from the fil
 | 72 | Deleted message | Display a localized “Deleted message” notice using subdued, small italic text. |
 | other | Unknown | Display the numeric type in a generic placeholder so new values remain visible. |
 
+### Desktop message edits
+
+Desktop databases may contain both an updated message row and technical rows representing its edit history. The viewer applies the following compatibility rules so only the final visible message is shown:
+
+- Rows with `Messages.ClientFlag` exactly equal to `256` or `257` are treated as edit-history rows and hidden.
+- The updated original row remains visible at its original timestamp.
+
 ## Android relationships
 
 - `conversations._id` identifies a conversation; `messages.conversation_id` links messages to it.
@@ -48,7 +57,7 @@ The viewer detects the format from required tables and columns, not from the fil
 - Rows with `messages.deleted = 1` are excluded from chat summaries, conversations, and search.
 - Conversation types `1` and `5` are treated as group/community conversations; type `6` is a self-chat.
 
-### Observed Android messages.extra_mime values
+### Known Android message types
 
 | extra_mime | Meaning | Viewer behavior |
 | ---: | --- | --- |

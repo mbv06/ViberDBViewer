@@ -111,7 +111,10 @@ class ViberDatabaseRepository(context: Context) : Closeable {
             SELECT ci.ChatID, ci.Name, COUNT(e.EventID), MAX(e.TimeStamp)
             FROM ChatInfo ci
             INNER JOIN Events e ON e.ChatID = ci.ChatID
-            INNER JOIN Messages m ON m.EventID = e.EventID AND m.Type <> 0
+            INNER JOIN Messages m
+                ON m.EventID = e.EventID
+                AND m.Type <> 0
+                AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
             GROUP BY ci.ChatID, ci.Name
             ORDER BY MAX(e.TimeStamp) DESC, ci.ChatID DESC
             """.trimIndent(),
@@ -168,7 +171,9 @@ class ViberDatabaseRepository(context: Context) : Closeable {
             FROM Events e
             INNER JOIN Messages m ON m.EventID = e.EventID
             LEFT JOIN Contact c ON c.ContactID = e.ContactID
-            WHERE e.ChatID = ? AND m.Type <> 0
+            WHERE e.ChatID = ?
+              AND m.Type <> 0
+              AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
             ORDER BY e.TimeStamp ASC, e.SortOrder ASC, e.EventID ASC
             """.trimIndent(),
             arrayOf(chatId.toString()),
@@ -222,6 +227,7 @@ class ViberDatabaseRepository(context: Context) : Closeable {
                 INNER JOIN Messages m ON m.EventID = e.EventID
                 LEFT JOIN Contact c ON c.ContactID = e.ContactID
                 WHERE m.Type <> 0
+                  AND COALESCE(m.ClientFlag, 0) NOT IN (256, 257)
                   AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (9, 15, 72))
                 ORDER BY e.TimeStamp DESC, e.SortOrder DESC, e.EventID DESC
                 """.trimIndent(),
@@ -426,7 +432,7 @@ class ViberDatabaseRepository(context: Context) : Closeable {
             "ChatRelation" to setOf("chatid", "contactid"),
             "Contact" to setOf("contactid", "name", "clientname", "number"),
             "Events" to setOf("eventid", "timestamp", "direction", "chatid", "contactid", "sortorder"),
-            "Messages" to setOf("eventid", "type", "body", "info"),
+            "Messages" to setOf("eventid", "type", "body", "info", "clientflag"),
         )
 
         private val ANDROID_REQUIRED_SCHEMA = mapOf(

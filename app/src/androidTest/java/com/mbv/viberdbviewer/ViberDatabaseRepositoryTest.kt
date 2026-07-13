@@ -49,12 +49,17 @@ class ViberDatabaseRepositoryTest {
         assertEquals("+380 67 123", chats[1].subtitle)
 
         val messages = repository.loadMessages(chats[1].chatId)
-        assertEquals(listOf(100L, 103L, 104L, 101L), messages.map { it.eventId })
+        assertEquals(listOf(100L, 110L, 114L, 103L, 104L, 113L, 101L), messages.map { it.eventId })
         assertEquals(MessageKind.IMAGE, messages[0].kind)
-        assertEquals("Business notice", messages[1].displayText)
-        assertEquals(MessageKind.DELETED, messages[2].kind)
-        assertEquals(context.getString(R.string.message_deleted), messages[2].displayText)
-        assertEquals(MessageKind.TEXT, messages[3].kind)
+        assertEquals("Final edited text", messages[1].displayText)
+        assertEquals(1200L, messages[1].timestamp)
+        assertEquals("Orphan edit kept", messages[2].displayText)
+        assertEquals("Business notice", messages[3].displayText)
+        assertEquals(MessageKind.DELETED, messages[4].kind)
+        assertEquals(context.getString(R.string.message_deleted), messages[4].displayText)
+        assertEquals(MessageKind.DELETED, messages[5].kind)
+        assertEquals(context.getString(R.string.message_deleted), messages[5].displayText)
+        assertEquals(MessageKind.TEXT, messages[6].kind)
     }
 
     @Test
@@ -66,8 +71,12 @@ class ViberDatabaseRepositoryTest {
         assertEquals("Business notice", business.single().displayText)
 
         val deleted = repository.searchMessages(context.getString(R.string.message_deleted).uppercase())
-        assertEquals(listOf(104L), deleted.map { it.eventId })
-        assertEquals(MessageKind.DELETED, deleted.single().kind)
+        assertEquals(listOf(113L, 104L), deleted.map { it.eventId })
+        assertEquals(listOf(MessageKind.DELETED, MessageKind.DELETED), deleted.map { it.kind })
+
+        assertEquals(emptyList<Long>(), repository.searchMessages("First edit").map { it.eventId })
+        assertEquals(listOf(110L), repository.searchMessages("FINAL EDITED").map { it.eventId })
+        assertEquals(listOf(114L), repository.searchMessages("ORPHAN EDIT").map { it.eventId })
     }
 
     @Test
@@ -127,7 +136,7 @@ class ViberDatabaseRepositoryTest {
             db.execSQL("CREATE TABLE ChatInfo(ChatID INTEGER PRIMARY KEY, Name TEXT)")
             db.execSQL("CREATE TABLE ChatRelation(ChatID INTEGER, ContactID INTEGER)")
             db.execSQL("CREATE TABLE Events(EventID INTEGER PRIMARY KEY, TimeStamp INTEGER NOT NULL, Direction INTEGER NOT NULL, ChatID INTEGER, ContactID INTEGER, SortOrder INTEGER NOT NULL)")
-            db.execSQL("CREATE TABLE Messages(EventID INTEGER PRIMARY KEY, Type INTEGER NOT NULL, Body TEXT, Info TEXT)")
+            db.execSQL("CREATE TABLE Messages(EventID INTEGER PRIMARY KEY, Type INTEGER NOT NULL, Body TEXT, Info TEXT, ClientFlag INTEGER)")
 
             db.execSQL("INSERT INTO Contact VALUES(1, NULL, 'Me', '+380000')")
             db.execSQL("INSERT INTO Contact VALUES(2, '', 'Alice', '+380 67 123')")
@@ -145,13 +154,23 @@ class ViberDatabaseRepositoryTest {
             db.execSQL("INSERT INTO Events VALUES(102, 5000, 0, 10, 2, 102)")
             db.execSQL("INSERT INTO Events VALUES(103, 1500, 0, 10, 2, 103)")
             db.execSQL("INSERT INTO Events VALUES(104, 1600, 0, 10, 2, 104)")
+            db.execSQL("INSERT INTO Events VALUES(110, 1200, 1, 10, 1, 110)")
+            db.execSQL("INSERT INTO Events VALUES(111, 1300, 1, 10, 1, 111)")
+            db.execSQL("INSERT INTO Events VALUES(112, 6000, 1, 10, 1, 112)")
+            db.execSQL("INSERT INTO Events VALUES(113, 1700, 1, 10, 1, 113)")
+            db.execSQL("INSERT INTO Events VALUES(114, 1400, 0, 10, 2, 114)")
             db.execSQL("INSERT INTO Events VALUES(200, 3000, 0, 20, 3, 200)")
-            db.execSQL("INSERT INTO Messages VALUES(100, 2, NULL, '{}')")
-            db.execSQL("INSERT INTO Messages VALUES(101, 1, 'Hello', '{}')")
-            db.execSQL("INSERT INTO Messages VALUES(102, 0, NULL, '{}')")
-            db.execSQL("INSERT INTO Messages VALUES(103, 8, 'Business notice', '{}')")
-            db.execSQL("INSERT INTO Messages VALUES(104, 72, NULL, '{}')")
-            db.execSQL("INSERT INTO Messages VALUES(200, 9, 'Website', '{\"URL\":\"https://example.com\"}')")
+            db.execSQL("INSERT INTO Messages VALUES(100, 2, NULL, '{}', 0)")
+            db.execSQL("INSERT INTO Messages VALUES(101, 1, 'Hello', '{}', 0)")
+            db.execSQL("INSERT INTO Messages VALUES(102, 0, NULL, '{}', 0)")
+            db.execSQL("INSERT INTO Messages VALUES(103, 8, 'Business notice', '{}', 0)")
+            db.execSQL("INSERT INTO Messages VALUES(104, 72, NULL, '{}', 0)")
+            db.execSQL("INSERT INTO Messages VALUES(110, 1, 'Final edited text', '{\"desktop_info\":{\"edit_token\":10002}}', 0)")
+            db.execSQL("INSERT INTO Messages VALUES(111, 1, 'First edit', '{\"edit\":{\"token\":10000}}', 256)")
+            db.execSQL("INSERT INTO Messages VALUES(112, 1, 'Final edited text', '{\"rich_media\":{},\"edit\":{\"isSilent\":false,\"token\":10000}}', 257)")
+            db.execSQL("INSERT INTO Messages VALUES(113, 72, NULL, '{\"edit\":{\"token\":104}}', 0)")
+            db.execSQL("INSERT INTO Messages VALUES(114, 1, 'Orphan edit kept', '{\"desktop_info\":{},\"edit\":{\"token\":99999}}', 385)")
+            db.execSQL("INSERT INTO Messages VALUES(200, 9, 'Website', '{\"URL\":\"https://example.com\"}', 0)")
         }
     }
     private fun createAndroidFixture(file: File) {
