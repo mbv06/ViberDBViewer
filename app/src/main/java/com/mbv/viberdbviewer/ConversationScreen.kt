@@ -21,11 +21,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -49,36 +51,40 @@ internal fun ConversationScreen(
     actions: ViewerActions,
 ) {
     val dateFormats = rememberViewerDateFormats()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Scaffold(
-        topBar = {
-            ConversationTopBar(
-                chat = state.chat,
-                searchVisible = state.searchVisible,
-                searchQuery = state.searchQuery,
-                matchCount = state.matchCount,
-                activeMatchPosition = state.activeMatchPosition,
-                onBack = actions.closeChat,
-                onSearchVisibilityChange = actions.setMessageSearchVisible,
-                onSearchQueryChange = actions.updateMessageQuery,
-                onPreviousMatch = actions.previousMatch,
-                onNextMatch = actions.nextMatch,
-            )
-        },
-    ) { padding ->
-        if (state.isLoading) {
-            CenteredProgress(Modifier.padding(padding))
-        } else {
-            MessageList(
-                messages = state.messages,
-                daySeparatorIndices = state.daySeparatorIndices,
-                isGroup = state.chat.isGroup,
-                query = state.searchQuery,
-                activeMessageIndex = state.activeMessageIndex,
-                scrollRequest = state.scrollRequest,
-                dateFormats = dateFormats,
-                modifier = Modifier.padding(padding),
-            )
+    CompositionLocalProvider(LocalCopySnackbarHostState provides snackbarHostState) {
+        Scaffold(
+            topBar = {
+                ConversationTopBar(
+                    chat = state.chat,
+                    searchVisible = state.searchVisible,
+                    searchQuery = state.searchQuery,
+                    matchCount = state.matchCount,
+                    activeMatchPosition = state.activeMatchPosition,
+                    onBack = actions.closeChat,
+                    onSearchVisibilityChange = actions.setMessageSearchVisible,
+                    onSearchQueryChange = actions.updateMessageQuery,
+                    onPreviousMatch = actions.previousMatch,
+                    onNextMatch = actions.nextMatch,
+                )
+            },
+            snackbarHost = { CopySnackbarHost(snackbarHostState) },
+        ) { padding ->
+            if (state.isLoading) {
+                CenteredProgress(Modifier.padding(padding))
+            } else {
+                MessageList(
+                    messages = state.messages,
+                    daySeparatorIndices = state.daySeparatorIndices,
+                    isGroup = state.chat.isGroup,
+                    query = state.searchQuery,
+                    activeMessageIndex = state.activeMessageIndex,
+                    scrollRequest = state.scrollRequest,
+                    dateFormats = dateFormats,
+                    modifier = Modifier.padding(padding),
+                )
+            }
         }
     }
 }

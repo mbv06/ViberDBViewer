@@ -16,10 +16,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,38 +41,42 @@ fun ChatListScreen(
     globalSearchListState: LazyListState = rememberLazyListState(),
 ) {
     val dateFormats = rememberViewerDateFormats()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Scaffold(
-        topBar = {
-            ChatListTopBar(
-                isGlobalSearchVisible = state.isGlobalSearchVisible,
-                onGlobalSearchVisibilityChange = actions.setGlobalSearchVisible,
-                onReplaceDatabase = actions.pickDatabase,
-            )
-        },
-    ) { padding ->
-        if (state.isGlobalSearchVisible) {
-            GlobalSearchContent(
-                chats = state.chats,
-                query = state.globalSearchQuery,
-                results = state.globalSearchResults,
-                isLoading = state.isGlobalSearchLoading,
-                onQueryChange = actions.updateGlobalSearchQuery,
-                onResultSelected = actions.selectGlobalSearchResult,
-                listState = globalSearchListState,
-                dateFormats = dateFormats,
-                modifier = Modifier.fillMaxSize().padding(padding),
-            )
-        } else {
-            ChatSearchContent(
-                chats = state.chats,
-                query = state.query,
-                onQueryChange = actions.updateChatQuery,
-                onChatSelected = actions.selectChat,
-                listState = chatListState,
-                dateFormats = dateFormats,
-                modifier = Modifier.fillMaxSize().padding(padding),
-            )
+    CompositionLocalProvider(LocalCopySnackbarHostState provides snackbarHostState) {
+        Scaffold(
+            topBar = {
+                ChatListTopBar(
+                    isGlobalSearchVisible = state.isGlobalSearchVisible,
+                    onGlobalSearchVisibilityChange = actions.setGlobalSearchVisible,
+                    onReplaceDatabase = actions.pickDatabase,
+                )
+            },
+            snackbarHost = { CopySnackbarHost(snackbarHostState) },
+        ) { padding ->
+            if (state.isGlobalSearchVisible) {
+                GlobalSearchContent(
+                    chats = state.chats,
+                    query = state.globalSearchQuery,
+                    results = state.globalSearchResults,
+                    isLoading = state.isGlobalSearchLoading,
+                    onQueryChange = actions.updateGlobalSearchQuery,
+                    onResultSelected = actions.selectGlobalSearchResult,
+                    listState = globalSearchListState,
+                    dateFormats = dateFormats,
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                )
+            } else {
+                ChatSearchContent(
+                    chats = state.chats,
+                    query = state.query,
+                    onQueryChange = actions.updateChatQuery,
+                    onChatSelected = actions.selectChat,
+                    listState = chatListState,
+                    dateFormats = dateFormats,
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                )
+            }
         }
     }
 }

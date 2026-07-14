@@ -22,6 +22,7 @@
     <string name="global_search_start">Enter text to search all chats</string>
     <string name="global_search_limit">Showing the 200 newest matches</string>
     <string name="no_messages">This chat has no messages</string>
+    <string name="copied_to_clipboard">Copied</string>
 
     <plurals name="participant_count">
         <item quantity="one">%1$d participant</item>

@@ -25,8 +25,8 @@ android {
         applicationId = "com.mbv.viberdbviewer"
         minSdk = 26
         targetSdk = 37
-        versionCode = providers.environmentVariable("VERSION_CODE").orNull?.toInt() ?: 2
-        versionName = providers.environmentVariable("VERSION_NAME").orNull ?: "1.1"
+        versionCode = providers.environmentVariable("VERSION_CODE").orNull?.toInt() ?: 3
+        versionName = providers.environmentVariable("VERSION_NAME").orNull ?: "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

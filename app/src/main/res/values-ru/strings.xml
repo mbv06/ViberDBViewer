@@ -20,6 +20,7 @@
     <string name="global_search_start">Введите текст для поиска по всем чатам</string>
     <string name="global_search_limit">Показаны 200 самых новых совпадений</string>
     <string name="no_messages">В чате нет сообщений</string>
+    <string name="copied_to_clipboard">Скопировано</string>
 
     <plurals name="participant_count">
         <item quantity="one">%1$d участник</item>

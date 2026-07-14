@@ -1,7 +1,5 @@
 package com.mbv.viberdbviewer
 
-import android.content.ClipData
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -15,20 +13,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mbv.viberdbviewer.model.MessageKind
-import kotlinx.coroutines.launch
 
 const val CHAT_SEARCH_FIELD_TAG = "chat_search_field"
 
@@ -152,22 +146,3 @@ private fun deletedAwareTextColor(kind: MessageKind): Color =
     } else {
         Color.Unspecified
     }
-
-@Composable
-fun Modifier.copyOnLongClick(
-    text: () -> String,
-    onClick: () -> Unit = {},
-): Modifier {
-    val clipboard = LocalClipboard.current
-    val coroutineScope = rememberCoroutineScope()
-    return combinedClickable(
-        onClick = onClick,
-        onLongClick = {
-            coroutineScope.launch {
-                clipboard.setClipEntry(
-                    ClipData.newPlainText(null, text()).toClipEntry(),
-                )
-            }
-        },
-    )
-}
