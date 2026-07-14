@@ -1,10 +1,10 @@
 package com.mbv.viberdbviewer
 
+import com.mbv.viberdbviewer.data.sqliteLikePattern
 import com.mbv.viberdbviewer.model.ChatMessage
 import com.mbv.viberdbviewer.model.ChatSummary
 import com.mbv.viberdbviewer.model.ContactRecord
 import com.mbv.viberdbviewer.model.MessageKind
-import com.mbv.viberdbviewer.model.MessageLabels
 import com.mbv.viberdbviewer.model.filterChats
 import com.mbv.viberdbviewer.model.findDaySeparatorIndices
 import com.mbv.viberdbviewer.model.findMessageMatches
@@ -33,8 +33,8 @@ class ModelLogicTest {
     fun chatSearchMatchesNameAndNormalizedNumber() {
         val chats =
             listOf(
-                ChatSummary(1, "Alex", "+380 67 123", 1, 2, false, "+380 67 123"),
-                ChatSummary(2, "Work", "5 participants", 2, 5, true),
+                ChatSummary(1, "Alex", "+380 67 123", 1, false, "+380 67 123"),
+                ChatSummary(2, "Work", "5 participants", 2, true),
             )
         assertEquals(listOf(1L), filterChats(chats, "alex").map { it.chatId })
         assertEquals(listOf(1L), filterChats(chats, "067123").map { it.chatId })
@@ -43,23 +43,7 @@ class ModelLogicTest {
 
     @Test
     fun messageFormatterMapsTextLinksAndPlaceholders() {
-        val labels =
-            MessageLabels(
-                empty = "<empty message>",
-                image = "<image>",
-                video = "<video>",
-                sticker = "<sticker>",
-                location = "<location>",
-                contact = "<contact>",
-                pinned = { "Pinned: $it" },
-                pinnedEmpty = "<pinned message>",
-                unknownType = { "<message type $it>" },
-                link = "<link>",
-                audio = "<audio>",
-                gif = "<GIF>",
-                file = "<file>",
-                deleted = "Deleted message",
-            )
+        val labels = testMessageLabels()
 
         assertEquals(MessageKind.TEXT, formatMessage(DesktopMessageType.TEXT, "Hello", null, labels).kind)
         assertEquals(
@@ -92,8 +76,13 @@ class ModelLogicTest {
     }
 
     @Test
+    fun sqliteLikePatternEscapesUserWildcards() {
+        assertEquals("%100\\%\\_done\\\\%", sqliteLikePattern("100%_done\\"))
+    }
+
+    @Test
     fun androidMessageFormatterMapsObservedExtraMimeValues() {
-        val labels = labels()
+        val labels = testMessageLabels()
 
         assertEquals("Hello", formatAndroidMessage(AndroidMessageType.TEXT, "Hello", null, labels).displayText)
         assertEquals(MessageKind.IMAGE, formatAndroidMessage(AndroidMessageType.IMAGE, null, null, labels).kind)
@@ -169,7 +158,11 @@ class ModelLogicTest {
 
     @Test
     fun webLinksStopAtWhitespaceBracketsAndQuotes() {
-        val text = "https://example.com/one next <https://example.com/two> [https://example.com/three] \"https://example.com/four\""
+        val text =
+            "https://example.com/one next " +
+                "<https://example.com/two> " +
+                "[https://example.com/three] " +
+                "\"https://example.com/four\""
 
         assertEquals(
             listOf(
@@ -193,24 +186,5 @@ class ModelLogicTest {
         senderName = "",
         kind = MessageKind.TEXT,
         displayText = text,
-        searchableText = text,
     )
-
-    private fun labels() =
-        MessageLabels(
-            empty = "<empty message>",
-            image = "<image>",
-            video = "<video>",
-            sticker = "<sticker>",
-            location = "<location>",
-            contact = "<contact>",
-            pinned = { "Pinned: $it" },
-            pinnedEmpty = "<pinned message>",
-            unknownType = { "<message type $it>" },
-            link = "<link>",
-            audio = "<audio>",
-            gif = "<GIF>",
-            file = "<file>",
-            deleted = "Deleted message",
-        )
 }

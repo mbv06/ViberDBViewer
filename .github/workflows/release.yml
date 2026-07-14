@@ -13,7 +13,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  run-tests:
+    name: Run All Tests
+    uses: ./.github/workflows/tests.yml
+
+  run-gitleaks:
+    name: Run Gitleaks
+    uses: ./.github/workflows/gitleaks.yml
+
   build-release:
+    needs: [run-tests, run-gitleaks]
     name: Build signed release
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -24,20 +33,11 @@ jobs:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
 
       - name: Prepare release metadata
         shell: bash
@@ -76,8 +76,8 @@ jobs:
           chmod 600 "$keystore_path"
           echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
 
-      - name: Test and build signed APK
-        run: ./gradlew testDebugUnitTest assembleRelease --stacktrace
+      - name: Build signed APK
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Verify signatures and collect artifacts
         shell: bash

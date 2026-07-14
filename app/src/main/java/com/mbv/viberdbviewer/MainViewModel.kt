@@ -49,6 +49,37 @@ data class ViewerUiState(
 ) {
     val activeMessageIndex: Int?
         get() = matchIndices.getOrNull(activeMatchPosition)
+
+    fun clearMessageSearch() =
+        copy(
+            isMessageSearchVisible = false,
+            messageQuery = "",
+            matchIndices = emptyList(),
+            activeMatchPosition = -1,
+        )
+
+    fun clearConversation() =
+        clearMessageSearch().copy(
+            selectedChat = null,
+            messages = emptyList(),
+            daySeparatorIndices = emptySet(),
+            isLoadingMessages = false,
+        )
+
+    fun prepareConversation(
+        chat: ChatSummary,
+        initialQuery: String,
+    ) = copy(
+        selectedChat = chat,
+        messages = emptyList(),
+        daySeparatorIndices = emptySet(),
+        isLoadingMessages = true,
+        isMessageSearchVisible = initialQuery.isNotEmpty(),
+        messageQuery = initialQuery,
+        matchIndices = emptyList(),
+        activeMatchPosition = -1,
+        error = null,
+    )
 }
 
 class MainViewModel(
@@ -58,6 +89,7 @@ class MainViewModel(
     val state: StateFlow<ViewerUiState> = _state.asStateFlow()
 
     private var messageLoadJob: Job? = null
+    private var messageSearchJob: Job? = null
     private var globalSearchJob: Job? = null
 
     init {
@@ -65,6 +97,8 @@ class MainViewModel(
             try {
                 val ready = repository.openExisting()
                 if (ready) loadChatsAfterOpen() else _state.update { it.copy(isStarting = false) }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 _state.update {
                     it.copy(
@@ -85,8 +119,16 @@ class MainViewModel(
             try {
                 repository.importDatabase(uri)
                 loadChatsAfterOpen()
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                _state.update { it.copy(isImporting = false, isStarting = false, error = repository.userMessage(error)) }
+                _state.update {
+                    it.copy(
+                        isImporting = false,
+                        isStarting = false,
+                        error = repository.userMessage(error),
+                    )
+                }
             }
         }
     }
@@ -143,45 +185,24 @@ class MainViewModel(
             }
     }
 
-    fun selectChat(chat: ChatSummary) {
-        openChat(chat)
-    }
-
-    fun selectGlobalSearchResult(result: GlobalSearchResult) {
-        val current = _state.value
-        val chat = current.chats.firstOrNull { it.chatId == result.chatId } ?: return
-        openChat(chat, current.globalSearchQuery.trim(), result.eventId)
-    }
-
-    private fun openChat(
+    fun selectChat(
         chat: ChatSummary,
         initialQuery: String = "",
         targetEventId: Long? = null,
     ) {
         messageLoadJob?.cancel()
-        _state.update {
-            it.copy(
-                selectedChat = chat,
-                messages = emptyList(),
-                daySeparatorIndices = emptySet(),
-                isLoadingMessages = true,
-                isMessageSearchVisible = initialQuery.isNotEmpty(),
-                messageQuery = initialQuery,
-                matchIndices = emptyList(),
-                activeMatchPosition = -1,
-                error = null,
-            )
-        }
+        messageSearchJob?.cancel()
+        _state.update { it.prepareConversation(chat, initialQuery) }
         messageLoadJob =
             viewModelScope.launch {
                 try {
                     val messages = repository.loadMessages(chat.chatId)
-                    val daySeparatorIndices =
+                    val (daySeparatorIndices, matches) =
                         withContext(Dispatchers.Default) {
-                            findDaySeparatorIndices(messages, ZoneId.systemDefault())
+                            findDaySeparatorIndices(messages, ZoneId.systemDefault()) to
+                                findMessageMatches(messages, initialQuery)
                         }
                     if (_state.value.selectedChat?.chatId == chat.chatId) {
-                        val matches = findMessageMatches(messages, initialQuery)
                         val targetIndex =
                             targetEventId?.let { id ->
                                 messages.indexOfFirst { it.eventId == id }.takeIf { it >= 0 }
@@ -200,53 +221,82 @@ class MainViewModel(
                             )
                         }
                     }
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (error: Exception) {
-                    _state.update { it.copy(isLoadingMessages = false, error = repository.userMessage(error)) }
+                    _state.update {
+                        it.copy(
+                            isLoadingMessages = false,
+                            error = repository.userMessage(error),
+                        )
+                    }
                 }
             }
     }
 
+    fun selectGlobalSearchResult(result: GlobalSearchResult) {
+        val current = _state.value
+        val chat = current.chats.firstOrNull { it.chatId == result.chatId } ?: return
+        selectChat(chat, current.globalSearchQuery.trim(), result.eventId)
+    }
+
     fun closeChat() {
         messageLoadJob?.cancel()
-        _state.update {
-            it.copy(
-                selectedChat = null,
-                messages = emptyList(),
-                daySeparatorIndices = emptySet(),
-                isLoadingMessages = false,
-                isMessageSearchVisible = false,
-                messageQuery = "",
-                matchIndices = emptyList(),
-                activeMatchPosition = -1,
-            )
-        }
+        messageSearchJob?.cancel()
+        _state.update { it.clearConversation() }
     }
 
     fun setMessageSearchVisible(visible: Boolean) {
+        if (!visible) messageSearchJob?.cancel()
         _state.update {
             if (visible) {
                 it.copy(isMessageSearchVisible = true)
             } else {
-                it.copy(
-                    isMessageSearchVisible = false,
-                    messageQuery = "",
-                    matchIndices = emptyList(),
-                    activeMatchPosition = -1,
-                )
+                it.clearMessageSearch()
             }
         }
     }
 
     fun updateMessageQuery(query: String) {
-        _state.update { current ->
-            val matches = findMessageMatches(current.messages, query)
-            current.copy(
+        messageSearchJob?.cancel()
+        val messages = _state.value.messages
+        if (query.isBlank()) {
+            _state.update { current ->
+                current.copy(
+                    messageQuery = query,
+                    matchIndices = emptyList(),
+                    activeMatchPosition = -1,
+                    scrollRequest = current.scrollRequest + 1,
+                )
+            }
+            return
+        }
+
+        _state.update {
+            it.copy(
                 messageQuery = query,
-                matchIndices = matches,
-                activeMatchPosition = matches.lastIndex,
-                scrollRequest = current.scrollRequest + 1,
+                matchIndices = emptyList(),
+                activeMatchPosition = -1,
             )
         }
+        messageSearchJob =
+            viewModelScope.launch {
+                val matches =
+                    withContext(Dispatchers.Default) {
+                        findMessageMatches(messages, query)
+                    }
+                _state.update { current ->
+                    if (current.messages !== messages || current.messageQuery != query) {
+                        current
+                    } else {
+                        current.copy(
+                            matchIndices = matches,
+                            activeMatchPosition = matches.lastIndex,
+                            scrollRequest = current.scrollRequest + 1,
+                        )
+                    }
+                }
+            }
     }
 
     fun previousMatch() {

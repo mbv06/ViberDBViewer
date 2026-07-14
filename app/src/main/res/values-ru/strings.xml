@@ -58,7 +58,6 @@
     <string name="error_not_sqlite">Выбранный файл не является базой SQLite</string>
     <string name="error_corrupt_or_encrypted">База повреждена или зашифрована</string>
     <string name="error_integrity_check">Проверка целостности базы завершилась ошибкой</string>
-    <string name="error_unsupported_schema">Неподдерживаемая схема Viber: %1$s%2$s</string>
     <string name="error_unsupported_database_format">Неподдерживаемая схема Viber. Выберите desktop-базу viber.db или Android-базу viber_messages.</string>
     <string name="error_check_schema">Не удалось проверить структуру базы</string>
     <string name="error_database_not_open">База данных не открыта</string>

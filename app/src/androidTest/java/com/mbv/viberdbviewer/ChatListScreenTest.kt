@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -26,8 +27,8 @@ class ChatListScreenTest {
     fun filtersByNumberAndOpensSelectedChat() {
         val allChats =
             listOf(
-                ChatSummary(1, "Alice", "+380 67 123", 2, 2, false, "+380 67 123"),
-                ChatSummary(2, "Team", "3 participants", 3, 3, true),
+                ChatSummary(1, "Alice", "+380 67 123", 2, false, "+380 67 123"),
+                ChatSummary(2, "Team", "3 participants", 3, true),
             )
         var query by mutableStateOf("")
         var selectedId: Long? = null
@@ -35,17 +36,24 @@ class ChatListScreenTest {
         composeRule.setContent {
             ViberDBViewerTheme {
                 ChatListScreen(
-                    chats = filterChats(allChats, query),
-                    query = query,
-                    onQueryChange = { query = it },
-                    onChatSelected = { selectedId = it.chatId },
-                    onReplaceDatabase = {},
+                    state =
+                        ChatListUiState(
+                            chats = filterChats(allChats, query),
+                            query = query,
+                        ),
+                    actions =
+                        ViewerActions(
+                            updateChatQuery = { query = it },
+                            selectChat = { selectedId = it.chatId },
+                        ),
                 )
             }
         }
 
         composeRule.onNodeWithText(context.getString(R.string.chat_search_label)).performTextInput("067123")
-        composeRule.onNodeWithText("Team").assertDoesNotExist()
+        composeRule.runOnIdle {
+            assertEquals(0, composeRule.onAllNodesWithText("Team").fetchSemanticsNodes().size)
+        }
         composeRule.onNodeWithText("Alice").assertIsDisplayed().performClick()
         composeRule.runOnIdle { assertEquals(1L, selectedId) }
     }

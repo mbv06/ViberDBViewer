@@ -58,7 +58,6 @@
     <string name="error_not_sqlite">The selected file is not an SQLite database</string>
     <string name="error_corrupt_or_encrypted">The database is corrupted or encrypted</string>
     <string name="error_integrity_check">The database integrity check failed</string>
-    <string name="error_unsupported_schema">Unsupported Viber database schema: %1$s%2$s</string>
     <string name="error_unsupported_database_format">Unsupported Viber database schema. Select a desktop viber.db or Android viber_messages database.</string>
     <string name="error_check_schema">Could not verify the database structure</string>
     <string name="error_database_not_open">The database is not open</string>

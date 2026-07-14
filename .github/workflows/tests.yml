@@ -25,6 +25,7 @@ on:
       - "gradlew"
       - "gradlew.bat"
       - ".github/workflows/tests.yml"
+  workflow_call:
 
 permissions:
   contents: read
@@ -40,20 +41,11 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
 
       - name: Run Android Lint
         run: ./gradlew lintDebug --stacktrace
@@ -73,20 +65,11 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
 
       - name: Run static analysis
         run: ./gradlew detekt ktlintCheck --stacktrace
@@ -108,23 +91,23 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
 
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Upload unit test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 14
 
   instrumented-tests:
     name: Instrumented tests
@@ -132,20 +115,11 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+      - name: Set up build environment
+        uses: ./.github/actions/setup-build
 
       - name: Enable KVM
         run: |
@@ -160,3 +134,14 @@ jobs:
           api-level: 35
           arch: x86_64
           script: ./gradlew connectedDebugAndroidTest --stacktrace
+
+      - name: Upload instrumented test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: instrumented-test-reports
+          path: |
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+          if-no-files-found: warn
+          retention-days: 14

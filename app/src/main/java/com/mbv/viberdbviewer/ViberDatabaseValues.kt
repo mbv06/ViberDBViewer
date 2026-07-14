@@ -1,5 +1,7 @@
 package com.mbv.viberdbviewer
 
+internal const val GLOBAL_SEARCH_RESULT_LIMIT = 200
+
 internal object MessageDirection {
     const val INCOMING = 0
     const val OUTGOING = 1

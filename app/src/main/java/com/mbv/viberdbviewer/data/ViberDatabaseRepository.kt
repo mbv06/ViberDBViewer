@@ -1,12 +1,13 @@
 package com.mbv.viberdbviewer.data
 
 import android.content.Context
-import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteException
 import android.net.Uri
 import com.mbv.viberdbviewer.DesktopClientFlag
 import com.mbv.viberdbviewer.DesktopContact
 import com.mbv.viberdbviewer.DesktopMessageType
+import com.mbv.viberdbviewer.GLOBAL_SEARCH_RESULT_LIMIT
 import com.mbv.viberdbviewer.MessageDirection
 import com.mbv.viberdbviewer.R
 import com.mbv.viberdbviewer.model.ChatMessage
@@ -23,6 +24,7 @@ import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 
 class DatabaseImportException(
     message: String,
@@ -49,23 +51,7 @@ class ViberDatabaseRepository(
     @Volatile
     private var databaseFormat: ViberDatabaseFormat? = null
 
-    private val messageLabels =
-        MessageLabels(
-            empty = text(R.string.message_empty),
-            image = text(R.string.message_image),
-            video = text(R.string.message_video),
-            sticker = text(R.string.message_sticker),
-            location = text(R.string.message_location),
-            contact = text(R.string.message_contact),
-            pinned = { text(R.string.message_pinned, it) },
-            pinnedEmpty = text(R.string.message_pinned_empty),
-            unknownType = { text(R.string.message_unknown_type, it) },
-            link = text(R.string.message_link),
-            audio = text(R.string.message_audio),
-            gif = text(R.string.message_gif),
-            file = text(R.string.message_file),
-            deleted = text(R.string.message_deleted),
-        )
+    private val messageLabels = MessageLabels.from(appContext)
 
     private val androidReader = AndroidViberDatabaseReader(appContext, messageLabels)
 
@@ -97,15 +83,18 @@ class ViberDatabaseRepository(
 
                 val format = validateDatabase(candidateFile)
                 installCandidate(format)
-            } catch (error: DatabaseImportException) {
-                candidateFile.delete()
-                throw error
-            } catch (error: Exception) {
-                candidateFile.delete()
+            } catch (error: IOException) {
                 throw DatabaseImportException(
                     text(R.string.error_import_database, error.message ?: text(R.string.error_unknown)),
                     error,
                 )
+            } catch (error: SecurityException) {
+                throw DatabaseImportException(
+                    text(R.string.error_import_database, error.message ?: text(R.string.error_unknown)),
+                    error,
+                )
+            } finally {
+                candidateFile.delete()
             }
         }
 
@@ -167,8 +156,7 @@ class ViberDatabaseRepository(
                                 chatId = chatId,
                                 title = title,
                                 subtitle = subtitle,
-                                lastTimestamp = cursor.getLong(3),
-                                participantCount = participantIds.size,
+                                lastTimestamp = cursor.getLong(DESKTOP_CHAT_LAST_TIMESTAMP_COLUMN),
                                 isGroup = isGroup,
                                 searchNumber = if (isGroup) "" else directContact?.number.orEmpty(),
                             )
@@ -225,7 +213,6 @@ class ViberDatabaseRepository(
                                 senderName = sender,
                                 kind = formatted.kind,
                                 displayText = formatted.displayText,
-                                searchableText = formatted.searchableText,
                             )
                     }
                 }
@@ -234,7 +221,7 @@ class ViberDatabaseRepository(
 
     suspend fun searchMessages(
         query: String,
-        limit: Int = 200,
+        limit: Int = GLOBAL_SEARCH_RESULT_LIMIT,
     ): List<GlobalSearchResult> =
         withContext(Dispatchers.IO) {
             val needle = query.trim()
@@ -245,22 +232,27 @@ class ViberDatabaseRepository(
             if (requireDatabaseFormat() == ViberDatabaseFormat.ANDROID) {
                 return@withContext androidReader.searchMessages(db, needle, resultLimit)
             }
-            val results = ArrayList<GlobalSearchResult>(minOf(resultLimit, 200))
+            val scanAllText = requiresKotlinCaseFolding(needle).sqliteFlag()
+            val deletedMatches = messageLabels.deleted.contains(needle, ignoreCase = true).sqliteFlag()
+            val placeholderMatches =
+                listOf(
+                    messageLabels.image,
+                    messageLabels.video,
+                    messageLabels.sticker,
+                    messageLabels.location,
+                    messageLabels.contact,
+                    messageLabels.audio,
+                    messageLabels.gif,
+                    messageLabels.file,
+                ).any {
+                    it.contains(needle, ignoreCase = true)
+                }.sqliteFlag()
+            val results =
+                ArrayList<GlobalSearchResult>(minOf(resultLimit, GLOBAL_SEARCH_RESULT_LIMIT))
             db
                 .rawQuery(
-                    """
-                    SELECT e.EventID, e.ChatID, e.TimeStamp, e.ContactID, m.Type, m.Body,
-                           CASE WHEN m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.PINNED}) THEN m.Info ELSE NULL END,
-                           c.Name, c.ClientName, c.Number
-                    FROM Events e
-                    INNER JOIN Messages m ON m.EventID = e.EventID
-                    LEFT JOIN Contact c ON c.ContactID = e.ContactID
-                    WHERE m.Type <> ${DesktopMessageType.HEART_REACTION}
-                      AND COALESCE(m.ClientFlag, ${DesktopClientFlag.NONE}) NOT IN (${DesktopClientFlag.EDIT_HISTORY}, ${DesktopClientFlag.EDIT_HISTORY_VARIANT})
-                      AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.PINNED}, ${DesktopMessageType.DELETED}))
-                    ORDER BY e.TimeStamp DESC, e.SortOrder DESC, e.EventID DESC
-                    """.trimIndent(),
-                    null,
+                    DESKTOP_SEARCH_QUERY,
+                    arrayOf(scanAllText, sqliteLikePattern(needle), deletedMatches, placeholderMatches),
                 ).use { cursor ->
                     while (cursor.moveToNext() && results.size < resultLimit) {
                         coroutineContext.ensureActive()
@@ -271,7 +263,7 @@ class ViberDatabaseRepository(
                                 cursor.stringOrNull(6),
                                 messageLabels,
                             )
-                        if (!formatted.searchableText.contains(needle, ignoreCase = true)) continue
+                        if (!formatted.displayText.contains(needle, ignoreCase = true)) continue
 
                         val sender =
                             ContactRecord(
@@ -298,51 +290,72 @@ class ViberDatabaseRepository(
         val previousFormat = databaseFormat
         closeDatabase()
         backupFile.delete()
-        val hadActive = activeFile.isFile
-        if (hadActive && !activeFile.renameTo(backupFile)) {
-            throw DatabaseImportException(text(R.string.error_prepare_replacement))
-        }
-        if (!candidateFile.renameTo(activeFile)) {
-            if (hadActive) backupFile.renameTo(activeFile)
-            throw DatabaseImportException(text(R.string.error_save_database))
-        }
+        val hadActive = backupActiveDatabase()
+        promoteCandidate(hadActive)
         try {
             replaceOpenDatabase(openReadOnly(activeFile), format)
             backupFile.delete()
         } catch (error: Exception) {
-            closeDatabase()
-            activeFile.delete()
-            if (hadActive) backupFile.renameTo(activeFile)
-            if (activeFile.isFile) {
-                runCatching {
-                    val restoredFormat = previousFormat ?: validateDatabase(activeFile)
-                    replaceOpenDatabase(openReadOnly(activeFile), restoredFormat)
-                }
-            }
+            restorePreviousDatabase(hadActive, previousFormat)
             throw DatabaseImportException(text(R.string.error_open_imported_database), error)
+        }
+    }
+
+    private fun backupActiveDatabase(): Boolean {
+        val hadActive = activeFile.isFile
+        if (hadActive && !activeFile.renameTo(backupFile)) {
+            throw DatabaseImportException(text(R.string.error_prepare_replacement))
+        }
+        return hadActive
+    }
+
+    private fun promoteCandidate(hadActive: Boolean) {
+        if (!candidateFile.renameTo(activeFile)) {
+            if (hadActive) backupFile.renameTo(activeFile)
+            throw DatabaseImportException(text(R.string.error_save_database))
+        }
+    }
+
+    private fun restorePreviousDatabase(
+        hadActive: Boolean,
+        previousFormat: ViberDatabaseFormat?,
+    ) {
+        closeDatabase()
+        activeFile.delete()
+        if (hadActive) backupFile.renameTo(activeFile)
+        if (activeFile.isFile) {
+            runCatching {
+                val restoredFormat = previousFormat ?: validateDatabase(activeFile)
+                replaceOpenDatabase(openReadOnly(activeFile), restoredFormat)
+            }
         }
     }
 
     private fun validateDatabase(file: File): ViberDatabaseFormat {
         if (!hasSqliteHeader(file)) throw DatabaseImportException(text(R.string.error_not_sqlite))
-        val db =
-            try {
-                openReadOnly(file)
-            } catch (error: Exception) {
-                throw DatabaseImportException(text(R.string.error_corrupt_or_encrypted), error)
-            }
+        val db = openDatabaseForValidation(file)
         try {
-            db.rawQuery("PRAGMA quick_check", null).use { cursor ->
-                if (!cursor.moveToFirst() || cursor.getString(0) != "ok") {
-                    throw DatabaseImportException(text(R.string.error_integrity_check))
-                }
-            }
+            verifyDatabaseIntegrity(db)
             return detectDatabaseFormat(db)
-        } catch (error: Exception) {
-            if (error is DatabaseImportException) throw error
+        } catch (error: SQLiteException) {
             throw DatabaseImportException(text(R.string.error_check_schema), error)
         } finally {
             db.close()
+        }
+    }
+
+    private fun openDatabaseForValidation(file: File): SQLiteDatabase =
+        try {
+            openReadOnly(file)
+        } catch (error: SQLiteException) {
+            throw DatabaseImportException(text(R.string.error_corrupt_or_encrypted), error)
+        }
+
+    private fun verifyDatabaseIntegrity(db: SQLiteDatabase) {
+        db.rawQuery("PRAGMA quick_check", null).use { cursor ->
+            if (!cursor.moveToFirst() || cursor.getString(0) != "ok") {
+                throw DatabaseImportException(text(R.string.error_integrity_check))
+            }
         }
     }
 
@@ -368,12 +381,11 @@ class ViberDatabaseRepository(
     }
 
     private fun hasSqliteHeader(file: File): Boolean {
-        if (!file.isFile || file.length() < SQLITE_HEADER.size) return false
         val bytes = ByteArray(SQLITE_HEADER.size)
-        FileInputStream(file).use { input ->
-            if (input.read(bytes) != bytes.size) return false
-        }
-        return bytes.contentEquals(SQLITE_HEADER)
+        return file.isFile &&
+            file.length() >= SQLITE_HEADER.size &&
+            FileInputStream(file).use { input -> input.read(bytes) == bytes.size } &&
+            bytes.contentEquals(SQLITE_HEADER)
     }
 
     private fun openReadOnly(file: File): SQLiteDatabase =
@@ -463,11 +475,55 @@ class ViberDatabaseRepository(
 
     override fun close() = closeDatabase()
 
-    private fun Cursor.stringOrNull(index: Int): String? = if (isNull(index)) null else getString(index)
-
-    private fun Cursor.longOrNull(index: Int): Long? = if (isNull(index)) null else getLong(index)
-
     companion object {
+        private const val DESKTOP_CHAT_LAST_TIMESTAMP_COLUMN = 3
+
+        private val DESKTOP_SEARCH_QUERY =
+            """
+            SELECT e.EventID, e.ChatID, e.TimeStamp, e.ContactID, m.Type, m.Body,
+                   CASE WHEN m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.PINNED}) THEN m.Info ELSE NULL END,
+                   c.Name, c.ClientName, c.Number
+            FROM Events e
+            INNER JOIN Messages m ON m.EventID = e.EventID
+            LEFT JOIN Contact c ON c.ContactID = e.ContactID
+            WHERE m.Type <> ${DesktopMessageType.HEART_REACTION}
+              AND COALESCE(m.ClientFlag, ${DesktopClientFlag.NONE}) NOT IN (${DesktopClientFlag.EDIT_HISTORY}, ${DesktopClientFlag.EDIT_HISTORY_VARIANT})
+              AND (TRIM(COALESCE(m.Body, '')) <> '' OR m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.PINNED}, ${DesktopMessageType.DELETED}))
+              AND (
+                  CAST(? AS INTEGER) = 1
+                  OR (m.Type IN (${DesktopMessageType.TEXT}, ${DesktopMessageType.BUSINESS})
+                      AND LOWER(COALESCE(m.Body, '')) LIKE LOWER(?) ESCAPE '\')
+                  OR m.Type IN (${DesktopMessageType.LINK}, ${DesktopMessageType.PINNED})
+                  OR (CAST(? AS INTEGER) = 1 AND m.Type = ${DesktopMessageType.DELETED})
+                  OR (
+                      CAST(? AS INTEGER) = 1
+                      AND m.Type IN (
+                          ${DesktopMessageType.IMAGE},
+                          ${DesktopMessageType.VIDEO},
+                          ${DesktopMessageType.STICKER},
+                          ${DesktopMessageType.LOCATION},
+                          ${DesktopMessageType.CONTACT},
+                          ${DesktopMessageType.FILE}
+                      )
+                  )
+                  OR m.Type NOT IN (
+                      ${DesktopMessageType.HEART_REACTION},
+                      ${DesktopMessageType.TEXT},
+                      ${DesktopMessageType.IMAGE},
+                      ${DesktopMessageType.VIDEO},
+                      ${DesktopMessageType.STICKER},
+                      ${DesktopMessageType.LOCATION},
+                      ${DesktopMessageType.BUSINESS},
+                      ${DesktopMessageType.LINK},
+                      ${DesktopMessageType.CONTACT},
+                      ${DesktopMessageType.FILE},
+                      ${DesktopMessageType.PINNED},
+                      ${DesktopMessageType.DELETED}
+                  )
+              )
+            ORDER BY e.TimeStamp DESC, e.SortOrder DESC, e.EventID DESC
+            """.trimIndent()
+
         private val SQLITE_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
 
         private val DESKTOP_REQUIRED_SCHEMA =

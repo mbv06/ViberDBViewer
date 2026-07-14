@@ -79,7 +79,9 @@ Desktop databases may contain both an updated message row and technical rows rep
 
 ## Global message search
 
-- Global search scans only messages that can produce visible text, formats them with the same rules as the conversation view, and compares text case-insensitively in Kotlin so non-ASCII scripts work correctly.
+- For ASCII queries, SQLite first removes rows that cannot contain the requested text; wildcard characters in user input are escaped.
+- Messages with JSON-derived text remain conservative candidates, and non-ASCII queries bypass the SQL text prefilter so Kotlin case folding stays correct.
+- Candidate messages are formatted with the same rules as the conversation view and compared case-insensitively in Kotlin.
 - Input is debounced by 250 milliseconds.
 - Results are ordered newest-first and capped at 200 items.
 - Selecting a result opens its chat with in-chat search active and scrolls to the selected event.

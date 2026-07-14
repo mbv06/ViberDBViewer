@@ -1,0 +1,18 @@
+name: Setup Android Build
+description: Check out code, set up Java 17 and Gradle
+
+runs:
+  using: composite
+  steps:
+    - name: Make Gradle wrapper executable
+      shell: bash
+      run: chmod +x gradlew
+
+    - name: Set up Java
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: 17
+
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0

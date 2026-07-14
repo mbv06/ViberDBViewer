@@ -1,87 +1,43 @@
 package com.mbv.viberdbviewer
 
-import android.content.ClipData
 import android.os.Bundle
-import android.text.format.DateFormat
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboard
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.mbv.viberdbviewer.model.ChatMessage
-import com.mbv.viberdbviewer.model.ChatSummary
-import com.mbv.viberdbviewer.model.GlobalSearchResult
-import com.mbv.viberdbviewer.model.MessageKind
 import com.mbv.viberdbviewer.model.filterChats
 import com.mbv.viberdbviewer.ui.theme.ViberDBViewerTheme
-import kotlinx.coroutines.launch
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.util.Date
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,79 +45,93 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ViberDBViewerTheme {
-                val viewerViewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)
-                val state by viewerViewModel.state.collectAsState()
-                val picker =
-                    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-                        uri?.let(viewerViewModel::importDatabase)
-                    }
-                val pickDatabase = remember(picker) { { picker.launch(arrayOf("*/*")) } }
-
-                BackHandler(enabled = state.selectedChat != null || state.isGlobalSearchVisible) {
-                    if (state.selectedChat != null) {
-                        viewerViewModel.closeChat()
-                    } else {
-                        viewerViewModel.setGlobalSearchVisible(false)
-                    }
-                }
-
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    ViewerApp(
-                        state = state,
-                        onPickDatabase = pickDatabase,
-                        onChatQueryChange = viewerViewModel::updateChatQuery,
-                        onGlobalSearchVisibilityChange = viewerViewModel::setGlobalSearchVisible,
-                        onGlobalSearchQueryChange = viewerViewModel::updateGlobalSearchQuery,
-                        onGlobalSearchResultSelected = viewerViewModel::selectGlobalSearchResult,
-                        onChatSelected = viewerViewModel::selectChat,
-                        onBack = viewerViewModel::closeChat,
-                        onSearchVisibilityChange = viewerViewModel::setMessageSearchVisible,
-                        onMessageQueryChange = viewerViewModel::updateMessageQuery,
-                        onPreviousMatch = viewerViewModel::previousMatch,
-                        onNextMatch = viewerViewModel::nextMatch,
-                    )
-                }
-
-                state.error?.let { message ->
-                    AlertDialog(
-                        onDismissRequest = viewerViewModel::dismissError,
-                        confirmButton = {
-                            TextButton(onClick = viewerViewModel::dismissError) { Text(stringResource(R.string.action_ok)) }
-                        },
-                        title = { Text(stringResource(R.string.database_error_title)) },
-                        text = { Text(message) },
-                    )
-                }
+                ViewerRoute()
             }
         }
     }
 }
 
 @Composable
+private fun ViewerRoute(viewerViewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)) {
+    val state by viewerViewModel.state.collectAsState()
+    val picker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let(viewerViewModel::importDatabase)
+        }
+    val actions =
+        remember(viewerViewModel, picker) {
+            ViewerActions(
+                pickDatabase = {
+                    picker.launch(
+                        arrayOf(
+                            "application/x-sqlite3",
+                            "application/vnd.sqlite3",
+                            "application/octet-stream",
+                        ),
+                    )
+                },
+                updateChatQuery = viewerViewModel::updateChatQuery,
+                setGlobalSearchVisible = viewerViewModel::setGlobalSearchVisible,
+                updateGlobalSearchQuery = viewerViewModel::updateGlobalSearchQuery,
+                selectGlobalSearchResult = viewerViewModel::selectGlobalSearchResult,
+                selectChat = viewerViewModel::selectChat,
+                closeChat = viewerViewModel::closeChat,
+                setMessageSearchVisible = viewerViewModel::setMessageSearchVisible,
+                updateMessageQuery = viewerViewModel::updateMessageQuery,
+                previousMatch = viewerViewModel::previousMatch,
+                nextMatch = viewerViewModel::nextMatch,
+            )
+        }
+
+    BackHandler(enabled = state.selectedChat != null || state.isGlobalSearchVisible) {
+        if (state.selectedChat != null) {
+            viewerViewModel.closeChat()
+        } else {
+            viewerViewModel.setGlobalSearchVisible(false)
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        ViewerApp(state = state, actions = actions)
+    }
+
+    state.error?.let { message ->
+        DatabaseErrorDialog(message = message, onDismiss = viewerViewModel::dismissError)
+    }
+}
+
+@Composable
+private fun DatabaseErrorDialog(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_ok))
+            }
+        },
+        title = { Text(stringResource(R.string.database_error_title)) },
+        text = { Text(message) },
+    )
+}
+
+@Composable
 fun ViewerApp(
     state: ViewerUiState,
-    onPickDatabase: () -> Unit,
-    onChatQueryChange: (String) -> Unit,
-    onGlobalSearchVisibilityChange: (Boolean) -> Unit,
-    onGlobalSearchQueryChange: (String) -> Unit,
-    onGlobalSearchResultSelected: (GlobalSearchResult) -> Unit,
-    onChatSelected: (ChatSummary) -> Unit,
-    onBack: () -> Unit,
-    onSearchVisibilityChange: (Boolean) -> Unit,
-    onMessageQueryChange: (String) -> Unit,
-    onPreviousMatch: () -> Unit,
-    onNextMatch: () -> Unit,
+    actions: ViewerActions,
 ) {
     val chatListState = rememberLazyListState()
     val globalSearchListState = rememberLazyListState()
 
     Box(Modifier.fillMaxSize()) {
         when {
-            state.isStarting -> LoadingScreen(stringResource(R.string.loading_saved_database))
-            !state.databaseReady -> DatabasePickerScreen(onPickDatabase)
+            state.isStarting -> CenteredProgressWithText(stringResource(R.string.loading_saved_database))
+            !state.databaseReady -> DatabasePickerScreen(onPickDatabase = actions.pickDatabase)
             state.selectedChat == null -> {
                 val displayedChats =
                     if (state.isGlobalSearchVisible) {
@@ -172,39 +142,16 @@ fun ViewerApp(
                         }
                     }
                 ChatListScreen(
-                    chats = displayedChats,
-                    query = state.chatQuery,
-                    onQueryChange = onChatQueryChange,
-                    onChatSelected = onChatSelected,
-                    onReplaceDatabase = onPickDatabase,
-                    isGlobalSearchVisible = state.isGlobalSearchVisible,
-                    globalSearchQuery = state.globalSearchQuery,
-                    globalSearchResults = state.globalSearchResults,
-                    isGlobalSearchLoading = state.isGlobalSearchLoading,
-                    onGlobalSearchVisibilityChange = onGlobalSearchVisibilityChange,
-                    onGlobalSearchQueryChange = onGlobalSearchQueryChange,
-                    onGlobalSearchResultSelected = onGlobalSearchResultSelected,
+                    state = state.toChatListUi(displayedChats),
+                    actions = actions,
                     chatListState = chatListState,
                     globalSearchListState = globalSearchListState,
                 )
             }
             else ->
                 ConversationScreen(
-                    chat = state.selectedChat,
-                    messages = state.messages,
-                    daySeparatorIndices = state.daySeparatorIndices,
-                    isLoading = state.isLoadingMessages,
-                    searchVisible = state.isMessageSearchVisible,
-                    searchQuery = state.messageQuery,
-                    matchCount = state.matchIndices.size,
-                    activeMatchPosition = state.activeMatchPosition,
-                    activeMessageIndex = state.activeMessageIndex,
-                    scrollRequest = state.scrollRequest,
-                    onBack = onBack,
-                    onSearchVisibilityChange = onSearchVisibilityChange,
-                    onSearchQueryChange = onMessageQueryChange,
-                    onPreviousMatch = onPreviousMatch,
-                    onNextMatch = onNextMatch,
+                    state = state.toConversationUi(state.selectedChat),
+                    actions = actions,
                 )
         }
     }
@@ -236,17 +183,6 @@ private fun ImportingDialog() {
 }
 
 @Composable
-private fun LoadingScreen(text: String) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(16.dp))
-            Text(text)
-        }
-    }
-}
-
-@Composable
 private fun DatabasePickerScreen(onPickDatabase: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -257,551 +193,9 @@ private fun DatabasePickerScreen(onPickDatabase: () -> Unit) {
                 style = MaterialTheme.typography.bodyLarge,
             )
             Spacer(Modifier.height(24.dp))
-            Button(onClick = onPickDatabase) { Text(stringResource(R.string.action_select_database)) }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ChatListScreen(
-    chats: List<ChatSummary>,
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onChatSelected: (ChatSummary) -> Unit,
-    onReplaceDatabase: () -> Unit,
-    isGlobalSearchVisible: Boolean = false,
-    globalSearchQuery: String = "",
-    globalSearchResults: List<GlobalSearchResult> = emptyList(),
-    isGlobalSearchLoading: Boolean = false,
-    onGlobalSearchVisibilityChange: (Boolean) -> Unit = {},
-    onGlobalSearchQueryChange: (String) -> Unit = {},
-    onGlobalSearchResultSelected: (GlobalSearchResult) -> Unit = {},
-    chatListState: LazyListState = rememberLazyListState(),
-    globalSearchListState: LazyListState = rememberLazyListState(),
-) {
-    val dateFormats = rememberViewerDateFormats()
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(
-                            if (isGlobalSearchVisible) R.string.global_search_title else R.string.chats_title,
-                        ),
-                    )
-                },
-                actions = {
-                    TextButton(onClick = { onGlobalSearchVisibilityChange(!isGlobalSearchVisible) }) {
-                        Text(
-                            stringResource(
-                                if (isGlobalSearchVisible) R.string.action_close else R.string.action_global_search,
-                            ),
-                        )
-                    }
-                    TextButton(onClick = onReplaceDatabase) {
-                        Text(stringResource(R.string.action_change_database))
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            if (isGlobalSearchVisible) {
-                val chatTitlesById = remember(chats) { chats.associate { it.chatId to it.title } }
-                OutlinedTextField(
-                    value = globalSearchQuery,
-                    onValueChange = onGlobalSearchQueryChange,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.global_search_label)) },
-                    trailingIcon = {
-                        if (globalSearchQuery.isNotEmpty()) {
-                            TextButton(onClick = { onGlobalSearchQueryChange("") }) { Text("✕") }
-                        }
-                    },
-                )
-                when {
-                    isGlobalSearchLoading -> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                    globalSearchQuery.isBlank() -> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(stringResource(R.string.global_search_start))
-                        }
-                    }
-                    globalSearchResults.isEmpty() -> {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(stringResource(R.string.no_search_results))
-                        }
-                    }
-                    else -> {
-                        LazyColumn(Modifier.fillMaxSize(), state = globalSearchListState) {
-                            items(globalSearchResults, key = { it.eventId }) { result ->
-                                val chatTitle =
-                                    chatTitlesById[result.chatId]
-                                        ?: stringResource(R.string.fallback_chat, result.chatId)
-                                GlobalSearchRow(
-                                    result = result,
-                                    chatTitle = chatTitle,
-                                    dateFormats = dateFormats,
-                                    onClick = { onGlobalSearchResultSelected(result) },
-                                )
-                                HorizontalDivider()
-                            }
-                            if (globalSearchResults.size >= 200) {
-                                item {
-                                    Text(
-                                        stringResource(R.string.global_search_limit),
-                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.chat_search_label)) },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) TextButton(onClick = { onQueryChange("") }) { Text("✕") }
-                    },
-                )
-                if (chats.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(stringResource(if (query.isBlank()) R.string.no_chats else R.string.no_search_results))
-                    }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize(), state = chatListState) {
-                        items(chats, key = { it.chatId }) { chat ->
-                            ChatRow(chat, dateFormats, onClick = { onChatSelected(chat) })
-                            HorizontalDivider()
-                        }
-                    }
-                }
+            Button(onClick = onPickDatabase) {
+                Text(stringResource(R.string.action_select_database))
             }
-        }
-    }
-}
-
-@Composable
-private fun GlobalSearchRow(
-    result: GlobalSearchResult,
-    chatTitle: String,
-    dateFormats: ViewerDateFormats,
-    onClick: () -> Unit,
-) {
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                chatTitle,
-                modifier = Modifier.weight(1f),
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(dateFormats.formatChatTime(result.timestamp), style = MaterialTheme.typography.labelMedium)
-        }
-        if (result.senderName.isNotBlank()) {
-            Text(
-                result.senderName,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Text(
-            result.displayText,
-            style =
-                if (result.kind == MessageKind.DELETED) {
-                    MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic)
-                } else {
-                    MaterialTheme.typography.bodyMedium
-                },
-            color =
-                if (result.kind == MessageKind.DELETED) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    Color.Unspecified
-                },
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun ChatRow(
-    chat: ChatSummary,
-    dateFormats: ViewerDateFormats,
-    onClick: () -> Unit,
-) {
-    val clipboard = LocalClipboard.current
-    val coroutineScope = rememberCoroutineScope()
-
-    Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = {
-                        val textToCopy =
-                            if (chat.subtitle.isNotBlank()) {
-                                "${chat.title} ${chat.subtitle}"
-                            } else {
-                                chat.title
-                            }
-                        coroutineScope.launch {
-                            clipboard.setClipEntry(ClipData.newPlainText(null, textToCopy).toClipEntry())
-                        }
-                    },
-                ).padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(chat.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (chat.subtitle.isNotBlank()) {
-                Text("(${chat.subtitle})", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        Spacer(Modifier.width(12.dp))
-        Text(dateFormats.formatChatTime(chat.lastTimestamp), style = MaterialTheme.typography.labelMedium)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ConversationScreen(
-    chat: ChatSummary,
-    messages: List<ChatMessage>,
-    daySeparatorIndices: Set<Int>,
-    isLoading: Boolean,
-    searchVisible: Boolean,
-    searchQuery: String,
-    matchCount: Int,
-    activeMatchPosition: Int,
-    activeMessageIndex: Int?,
-    scrollRequest: Long,
-    onBack: () -> Unit,
-    onSearchVisibilityChange: (Boolean) -> Unit,
-    onSearchQueryChange: (String) -> Unit,
-    onPreviousMatch: () -> Unit,
-    onNextMatch: () -> Unit,
-) {
-    val dateFormats = rememberViewerDateFormats()
-
-    Scaffold(
-        topBar = {
-            Column {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text(chat.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(chat.subtitle, style = MaterialTheme.typography.labelMedium)
-                        }
-                    },
-                    navigationIcon = { TextButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.headlineMedium) } },
-                    actions = {
-                        TextButton(onClick = { onSearchVisibilityChange(!searchVisible) }) {
-                            Text(stringResource(if (searchVisible) R.string.action_close else R.string.action_search))
-                        }
-                    },
-                )
-                if (searchVisible) {
-                    MessageSearchBar(
-                        query = searchQuery,
-                        matchCount = matchCount,
-                        activePosition = activeMatchPosition,
-                        onQueryChange = onSearchQueryChange,
-                        onPrevious = onPreviousMatch,
-                        onNext = onNextMatch,
-                    )
-                }
-            }
-        },
-    ) { padding ->
-        if (isLoading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            MessageList(
-                messages = messages,
-                daySeparatorIndices = daySeparatorIndices,
-                isGroup = chat.isGroup,
-                query = searchQuery,
-                activeMessageIndex = activeMessageIndex,
-                scrollRequest = scrollRequest,
-                dateFormats = dateFormats,
-                modifier = Modifier.padding(padding),
-            )
-        }
-    }
-}
-
-@Composable
-private fun MessageSearchBar(
-    query: String,
-    matchCount: Int,
-    activePosition: Int,
-    onQueryChange: (String) -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f),
-            singleLine = true,
-            placeholder = { Text(stringResource(R.string.message_search_hint)) },
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(if (matchCount == 0) "0/0" else "${activePosition + 1}/$matchCount")
-        TextButton(onClick = onPrevious, enabled = activePosition > 0) {
-            Text("↑", style = MaterialTheme.typography.headlineMedium)
-        }
-        TextButton(onClick = onNext, enabled = activePosition in 0 until matchCount - 1) {
-            Text("↓", style = MaterialTheme.typography.headlineMedium)
-        }
-    }
-}
-
-@Composable
-private fun MessageList(
-    messages: List<ChatMessage>,
-    daySeparatorIndices: Set<Int>,
-    isGroup: Boolean,
-    query: String,
-    activeMessageIndex: Int?,
-    scrollRequest: Long,
-    dateFormats: ViewerDateFormats,
-    modifier: Modifier = Modifier,
-) {
-    val listState = rememberLazyListState()
-    LaunchedEffect(scrollRequest, messages.size, activeMessageIndex) {
-        val target = activeMessageIndex ?: if (query.isBlank()) messages.lastIndex else null
-        if (target != null && target >= 0) listState.scrollToItem(target)
-    }
-
-    if (messages.isEmpty()) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_messages)) }
-        return
-    }
-
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        state = listState,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        itemsIndexed(messages, key = { _, message -> message.eventId }) { index, message ->
-            if (index in daySeparatorIndices) DateDivider(message.timestamp, dateFormats)
-            MessageBubble(
-                message = message,
-                showSender = isGroup && !message.isOutgoing,
-                query = query,
-                active = index == activeMessageIndex,
-                dateFormats = dateFormats,
-            )
-        }
-    }
-}
-
-@Composable
-private fun DateDivider(
-    timestamp: Long,
-    dateFormats: ViewerDateFormats,
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(bottom = 6.dp),
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Text(
-                dateFormats.longDate.format(Date(timestamp)),
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.labelMedium,
-            )
-        }
-    }
-}
-
-@Composable
-private fun MessageBubble(
-    message: ChatMessage,
-    showSender: Boolean,
-    query: String,
-    active: Boolean,
-    dateFormats: ViewerDateFormats,
-) {
-    val clipboard = LocalClipboard.current
-    val coroutineScope = rememberCoroutineScope()
-
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        Surface(
-            modifier =
-                Modifier
-                    .align(if (message.isOutgoing) Alignment.CenterEnd else Alignment.CenterStart)
-                    .widthIn(max = maxWidth * 0.75f)
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = {
-                            coroutineScope.launch {
-                                clipboard.setClipEntry(ClipData.newPlainText(null, message.displayText).toClipEntry())
-                            }
-                        },
-                    ),
-            shape = RoundedCornerShape(14.dp),
-            color = if (message.isOutgoing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-            border = if (active) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        ) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                if (showSender) {
-                    Text(message.senderName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(2.dp))
-                }
-                val annotatedText = linkedAndHighlightedText(message.displayText, query)
-                if (message.kind == MessageKind.DELETED) {
-                    Text(
-                        annotatedText,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    Text(annotatedText)
-                }
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    dateFormats.time.format(Date(message.timestamp)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.align(Alignment.End),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun linkedAndHighlightedText(
-    text: String,
-    query: String,
-) = run {
-    val linkColor = MaterialTheme.colorScheme.primary
-    val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
-    val onHighlightColor = MaterialTheme.colorScheme.onTertiaryContainer
-    val links = remember(text) { findWebLinks(text) }
-    remember(text, query, linkColor, highlightColor, onHighlightColor, links) {
-        buildAnnotatedString {
-            append(text)
-
-            links.forEach { link ->
-                addLink(
-                    LinkAnnotation.Url(
-                        url = link.url,
-                        styles =
-                            TextLinkStyles(
-                                style =
-                                    SpanStyle(
-                                        color = linkColor,
-                                        textDecoration = TextDecoration.Underline,
-                                    ),
-                            ),
-                    ),
-                    start = link.start,
-                    end = link.end,
-                )
-            }
-
-            val needle = query.trim()
-            if (needle.isNotEmpty()) {
-                var cursor = 0
-                while (cursor < text.length) {
-                    val match = text.indexOf(needle, cursor, ignoreCase = true)
-                    if (match < 0) break
-                    addStyle(
-                        SpanStyle(background = highlightColor, color = onHighlightColor),
-                        start = match,
-                        end = match + needle.length,
-                    )
-                    cursor = match + needle.length
-                }
-            }
-        }
-    }
-}
-
-internal data class DetectedWebLink(
-    val url: String,
-    val start: Int,
-    val end: Int,
-)
-
-private val webUrlPattern = Regex("""https?://[^\s<>{}\[\]"]+""", RegexOption.IGNORE_CASE)
-private val trailingUrlPunctuation = charArrayOf('.', ',', ';', ':', '!', '?', ')', '\'', '»')
-
-internal fun findWebLinks(text: String): List<DetectedWebLink> =
-    webUrlPattern
-        .findAll(text)
-        .mapNotNull { match ->
-            val url = match.value.trimEnd(*trailingUrlPunctuation)
-            if (url.length <= match.value.indexOf("://") + 3) {
-                null
-            } else {
-                DetectedWebLink(url = url, start = match.range.first, end = match.range.first + url.length)
-            }
-        }.toList()
-
-@Composable
-private fun rememberViewerDateFormats(): ViewerDateFormats {
-    val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    return remember(context, configuration) {
-        ViewerDateFormats(
-            time = DateFormat.getTimeFormat(context),
-            date = DateFormat.getDateFormat(context),
-            longDate = DateFormat.getLongDateFormat(context),
-            zoneId = ZoneId.systemDefault(),
-        )
-    }
-}
-
-private data class ViewerDateFormats(
-    val time: java.text.DateFormat,
-    val date: java.text.DateFormat,
-    val longDate: java.text.DateFormat,
-    val zoneId: ZoneId,
-) {
-    fun formatChatTime(timestamp: Long): String {
-        val value = Date(timestamp)
-        val messageDay = Instant.ofEpochMilli(timestamp).atZone(zoneId).toLocalDate()
-        return if (messageDay == LocalDate.now(zoneId)) {
-            time.format(value)
-        } else {
-            date.format(value)
         }
     }
 }
