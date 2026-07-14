@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -29,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import com.mbv.viberdbviewer.model.MessageKind
 import kotlinx.coroutines.launch
 
+const val CHAT_SEARCH_FIELD_TAG = "chat_search_field"
+
 @Composable
 fun SearchTextField(
     value: String,
@@ -36,11 +39,16 @@ fun SearchTextField(
     modifier: Modifier = Modifier,
     label: String? = null,
     placeholder: String? = null,
+    testTag: String? = null,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
         singleLine = true,
         label = label?.let { { Text(it) } },
         placeholder = placeholder?.let { { Text(it) } },

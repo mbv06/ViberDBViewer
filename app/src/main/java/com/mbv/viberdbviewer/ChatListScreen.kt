@@ -218,6 +218,7 @@ private fun ChatSearchContent(
             value = query,
             onValueChange = onQueryChange,
             label = stringResource(R.string.chat_search_label),
+            testTag = CHAT_SEARCH_FIELD_TAG,
         )
         if (chats.isEmpty()) {
             val message =

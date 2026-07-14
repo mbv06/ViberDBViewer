@@ -1,15 +1,16 @@
 package com.mbv.viberdbviewer
 
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
-import androidx.test.platform.app.InstrumentationRegistry
 import com.mbv.viberdbviewer.model.ChatSummary
 import com.mbv.viberdbviewer.model.filterChats
 import com.mbv.viberdbviewer.ui.theme.ViberDBViewerTheme
@@ -18,10 +19,8 @@ import org.junit.Rule
 import org.junit.Test
 
 class ChatListScreenTest {
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
-
     @get:Rule
-    val composeRule = createComposeRule()
+    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
     fun filtersByNumberAndOpensSelectedChat() {
@@ -50,11 +49,12 @@ class ChatListScreenTest {
             }
         }
 
-        composeRule.onNodeWithText(context.getString(R.string.chat_search_label)).performTextInput("067123")
-        composeRule.runOnIdle {
-            assertEquals(0, composeRule.onAllNodesWithText("Team").fetchSemanticsNodes().size)
-        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(CHAT_SEARCH_FIELD_TAG).performTextInput("067123")
+        composeRule.waitForIdle()
+        assertEquals(0, composeRule.onAllNodesWithText("Team").fetchSemanticsNodes().size)
         composeRule.onNodeWithText("Alice").assertIsDisplayed().performClick()
-        composeRule.runOnIdle { assertEquals(1L, selectedId) }
+        composeRule.waitForIdle()
+        assertEquals(1L, selectedId)
     }
 }
